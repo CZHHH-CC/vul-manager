@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}系统设置 - 漏洞管理系统{% endblock %}
+
+{% block content %}
+
+<div class="mb-6">
+  <h1 class="hero-title">系统设置</h1>
+  <p class="hero-sub">配置 AI 服务商以启用智能风险分析</p>
+</div>
+
+<div class="max-w-2xl space-y-4">
+
+  <div class="card fade-in">
+    <div class="card-hd"><span class="card-title">AI 配置</span></div>
+    <div class="card-body space-y-5">
+
+      <!-- Switch -->
+      <div class="flex items-center justify-between rounded-lg border border-border p-4">
+        <div>
+          <p class="text-sm font-medium mb-0.5">AI 智能分析</p>
+          <p class="text-xs text-muted-foreground">启用后可使用 AI 对漏洞进行风险评估和修复建议</p>
+        </div>
+        <button type="button" id="aiEnabled" role="switch" data-checked="{{ 'true' if settings.ai_enabled else 'false' }}"
+                class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring {% if settings.ai_enabled %}bg-primary{% else %}bg-input{% endif %}">
+          <span class="pointer-events-none block h-4 w-4 rounded-full bg-background shadow-sm transition-transform {% if settings.ai_enabled %}translate-x-4{% else %}translate-x-0{% endif %}"></span>
+        </button>
+      </div>
+
+      <div id="aiConfig" class="space-y-4 transition-opacity {% if not settings.ai_enabled %}opacity-50 pointer-events-none{% endif %}">
+        <div>
+          <label class="form-label">AI 服务商</label>
+          <select class="form-select" id="aiProvider" onchange="onProviderChange()">
+            <option value="">自定义</option>
+            {% for key, provider in providers.items() %}
+            <option value="{{ key }}" {% if settings.ai_provider == key %}selected{% endif %}>{{ provider.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="form-label">API 密钥</label>
+          <div class="flex gap-2">
+            <input type="password" class="form-input flex-1" id="aiApiKey" value="{{ settings.ai_api_key }}" placeholder="输入 API 密钥">
+            <button class="btn btn-outline btn-icon" type="button" onclick="toggleApiKey()" title="显示/隐藏">
+              <svg id="eyeIcon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </div>
+        </div>
+        <div>
+          <label class="form-label">API 地址</label>
+          <input type="text" class="form-input" id="aiBaseUrl" value="{{ settings.ai_base_url }}" placeholder="https://api.openai.com/v1">
+          <p class="text-xs text-muted-foreground mt-1.5">选择服务商后自动填充，也可手动修改</p>
+        </div>
+        <div>
+          <label class="form-label">模型名称</label>
+          <input type="text" class="form-input" id="aiModel" value="{{ settings.ai_model }}" placeholder="gpt-4o-mini">
+          <p class="text-xs text-muted-foreground mt-1.5">选择服务商后自动填充，也可手动修改</p>
+        </div>
+        <div id="providerHelp" class="alert alert-info hidden"><span id="providerHelpText"></span></div>
+      </div>
+
+      <div class="h-px bg-border"></div>
+
+      <div class="flex items-center justify-between">
+        <button class="btn btn-outline" onclick="testConnection()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></svg>
+          测试连接
+        </button>
+        <button class="btn btn-default" onclick="saveSettings()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          保存设置
+        </button>
+      </div>
+
+      <div id="statusMessage" class="hidden"></div>
+    </div>
+  </div>
+
+  <div class="card fade-in">
+    <div class="card-hd"><span class="card-title">配置指南</span></div>
+    <div class="card-body !pt-0">
+      <div class="divide-y divide-border">
+        {% set guides = [
+          ('OpenAI 配置说明', 'platform.openai.com', 'https://platform.openai.com', 'gpt-4o-mini（性价比高）'),
+          ('DeepSeek 配置说明', 'platform.deepseek.com', 'https://platform.deepseek.com', 'deepseek-chat'),
+          ('阿里云百炼 配置说明', '百炼控制台', 'https://bailian.console.aliyun.com', 'qwen-plus'),
+          ('火山引擎 配置说明', '火山引擎方舟', 'https://console.volcengine.com/ark', 'doubao-pro-32k'),
+        ] %}
+        {% for title, linktext, url, model in guides %}
+        <div>
+          <button type="button" onclick="toggleAccordion(this)" class="w-full flex items-center justify-between py-3.5 text-sm font-medium hover:text-muted-foreground transition-colors">
+            <span>{{ title }}</span>
+            <svg class="acc-chevron transition-transform shrink-0 text-muted-foreground" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+          <div class="accordion-content"><div><div class="pb-4 text-sm text-muted-foreground space-y-2">
+            <ol class="list-decimal list-inside space-y-1">
+              <li>访问 <a href="{{ url }}" target="_blank" class="text-foreground underline underline-offset-2">{{ linktext }}</a></li>
+              <li>注册 / 登录后，进入 API Keys 管理页面</li>
+              <li>创建新的 API Key</li>
+              <li>选择对应服务商，将 Key 填入上方「API 密钥」</li>
+            </ol>
+            <p class="text-foreground"><strong>推荐模型：</strong>{{ model }}</p>
+          </div></div></div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const providers = {{ providers | tojson }};
+const aiSwitch = document.getElementById('aiEnabled');
+aiSwitch.addEventListener('click', function(){
+  const checked = this.dataset.checked !== 'true';
+  this.dataset.checked = checked ? 'true' : 'false';
+  const knob = this.querySelector('span');
+  this.classList.toggle('bg-primary', checked); this.classList.toggle('bg-input', !checked);
+  knob.classList.toggle('translate-x-4', checked); knob.classList.toggle('translate-x-0', !checked);
+  const cfg = document.getElementById('aiConfig');
+  cfg.classList.toggle('opacity-50', !checked); cfg.classList.toggle('pointer-events-none', !checked);
+});
+function isAiEnabled(){ return aiSwitch.dataset.checked === 'true'; }
+function toggleAccordion(btn){ const c=btn.nextElementSibling; const ch=btn.querySelector('.acc-chevron'); const open=c.classList.toggle('open'); ch.style.transform=open?'rotate(180deg)':''; }
+function onProviderChange(){ const p=document.getElementById('aiProvider').value,h=document.getElementById('providerHelp'),t=document.getElementById('providerHelpText'); if(p&&providers[p]){document.getElementById('aiBaseUrl').value=providers[p].base_url;document.getElementById('aiModel').value=providers[p].model;h.classList.remove('hidden');t.textContent=`已自动填充 ${providers[p].name} 的默认配置`;}else{h.classList.add('hidden');} }
+function toggleApiKey(){ const i=document.getElementById('aiApiKey'); i.type=i.type==='password'?'text':'password'; }
+function showMessage(type,text){ const m=document.getElementById('statusMessage'); m.classList.remove('hidden'); m.className='alert alert-'+type; m.innerHTML=text; setTimeout(()=>m.classList.add('hidden'),5000); }
+async function saveSettings(){ const data={ai_enabled:isAiEnabled(),ai_provider:document.getElementById('aiProvider').value,ai_api_key:document.getElementById('aiApiKey').value,ai_base_url:document.getElementById('aiBaseUrl').value,ai_model:document.getElementById('aiModel').value}; try{ const r=await fetch('/api/settings/ai',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}); const j=await r.json(); if(j.success)showMessage('ok','设置已保存'); else showMessage('error','保存失败: '+(j.detail||'未知错误')); }catch(e){ showMessage('error','请求失败: '+e.message); } }
+async function testConnection(){ const k=document.getElementById('aiApiKey').value; if(!k){showMessage('warn','请先填写 API 密钥');return;} showMessage('info','测试中…'); try{ const r=await fetch('/api/settings/ai/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ai_api_key:k,ai_base_url:document.getElementById('aiBaseUrl').value,ai_model:document.getElementById('aiModel').value})}); const j=await r.json(); showMessage(j.success?'ok':'error',j.message); }catch(e){ showMessage('error','测试失败: '+e.message); } }
+</script>
+{% endblock %}

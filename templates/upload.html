@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}上传数据 - 漏洞管理系统{% endblock %}
+
+{% block content %}
+
+<div class="mb-6">
+  <h1 class="hero-title">上传数据</h1>
+  <p class="hero-sub">导入漏洞工单 Excel，系统自动解析并入库</p>
+</div>
+
+<div class="max-w-2xl space-y-4">
+
+  <div class="card fade-in">
+    <div class="card-body !pt-6 space-y-5">
+
+      <div id="dropZone" class="rounded-xl border-2 border-dashed border-border p-10 text-center cursor-pointer transition-colors hover:border-foreground/40 hover:bg-muted/40 select-none">
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-3 text-muted-foreground">
+          <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M12 18v-6"/><path d="m9 15 3 3 3-3"/>
+        </svg>
+        <p class="text-sm font-medium mb-1">拖拽 Excel 文件到此处，或点击选择</p>
+        <p class="text-xs text-muted-foreground">支持 .xlsx 和 .xls 格式</p>
+        <input type="file" id="fileInput" accept=".xlsx,.xls" class="hidden">
+      </div>
+
+      <div id="uploadProgress" class="hidden space-y-2">
+        <div class="flex items-center justify-between text-xs text-muted-foreground"><span id="uploadStatus">上传中…</span><span id="uploadPct">0%</span></div>
+        <div class="progress-track h-1.5"><div id="progressFill" class="progress-fill" style="width:0%"></div></div>
+      </div>
+
+      <div id="uploadResult" class="hidden"><div id="resultAlert" class="alert"></div></div>
+
+      <div class="rounded-lg bg-muted p-4">
+        <p class="text-xs font-semibold mb-2">说明</p>
+        <ul class="space-y-1.5">
+          {% for note in [
+            '系统会自动解析 Excel 中的漏洞工单数据',
+            '如果工单编号 (VIT) 已存在，系统将更新对应的状态和信息',
+            '新增工单将自动提取 CVSS 评分、修复建议等结构化数据',
+            '上传后可在「漏洞列表」页面查看和管理所有工单',
+          ] %}
+          <li class="text-xs text-muted-foreground flex items-start gap-2">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 mt-0.5"><polyline points="20 6 9 17 4 12"/></svg>
+            {{ note }}
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  {% if history %}
+  <div class="card fade-in">
+    <div class="card-hd"><span class="card-title">上传历史</span></div>
+    <div class="overflow-x-auto">
+      <table class="w-full">
+        <thead><tr class="border-b border-border bg-muted/40">
+          <th class="tbl-th">文件名</th><th class="tbl-th text-center">总行数</th><th class="tbl-th text-center">新增</th>
+          <th class="tbl-th text-center">更新</th><th class="tbl-th text-center">失败</th><th class="tbl-th">上传时间</th>
+        </tr></thead>
+        <tbody>
+          {% for log in history %}
+          <tr class="tbl-row">
+            <td class="tbl-td">
+              <div class="flex items-center gap-2">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-muted-foreground shrink-0"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
+                <span class="text-xs font-medium truncate max-w-[180px]">{{ log.filename }}</span>
+              </div>
+            </td>
+            <td class="tbl-td text-center text-muted-foreground">{{ log.total_rows }}</td>
+            <td class="tbl-td text-center"><span class="badge badge-emerald">{{ log.new_count }}</span></td>
+            <td class="tbl-td text-center"><span class="badge badge-blue">{{ log.updated_count }}</span></td>
+            <td class="tbl-td text-center">{% if log.error_count > 0 %}<span class="badge badge-destructive">{{ log.error_count }}</span>{% else %}<span class="badge badge-secondary">0</span>{% endif %}</td>
+            <td class="tbl-td text-xs text-muted-foreground">{{ log.uploaded_at.strftime('%Y-%m-%d %H:%M') if log.uploaded_at else 'N/A' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const dropZone=document.getElementById('dropZone'),fileInput=document.getElementById('fileInput'),uploadProg=document.getElementById('uploadProgress'),progFill=document.getElementById('progressFill'),uploadPct=document.getElementById('uploadPct'),uploadStat=document.getElementById('uploadStatus'),uploadRes=document.getElementById('uploadResult'),resAlert=document.getElementById('resultAlert');
+dropZone.addEventListener('click',()=>fileInput.click());
+dropZone.addEventListener('dragover',e=>{e.preventDefault();dropZone.classList.add('drop-zone-active');});
+dropZone.addEventListener('dragleave',()=>dropZone.classList.remove('drop-zone-active'));
+dropZone.addEventListener('drop',e=>{e.preventDefault();dropZone.classList.remove('drop-zone-active');if(e.dataTransfer.files.length)uploadFile(e.dataTransfer.files[0]);});
+fileInput.addEventListener('change',e=>{if(e.target.files.length)uploadFile(e.target.files[0]);});
+function setProgress(p){progFill.style.width=p+'%';uploadPct.textContent=p+'%';}
+function showResult(ok,m){uploadRes.classList.remove('hidden');resAlert.className='alert '+(ok?'alert-ok':'alert-error');resAlert.innerHTML=`<strong>${ok?'上传成功':'上传失败'}</strong>　${m}`;}
+function uploadFile(file){
+  if(!file.name.match(/\.(xlsx|xls)$/i)){alert('请选择 Excel 文件 (.xlsx 或 .xls)');return;}
+  const fd=new FormData();fd.append('file',file);
+  uploadProg.classList.remove('hidden');uploadRes.classList.add('hidden');setProgress(0);uploadStat.textContent='上传中…';
+  const xhr=new XMLHttpRequest();xhr.open('POST','/api/upload');
+  xhr.upload.addEventListener('progress',e=>{if(e.lengthComputable)setProgress(Math.round(e.loaded/e.total*100));});
+  xhr.addEventListener('load',()=>{uploadProg.classList.add('hidden');try{const d=JSON.parse(xhr.responseText);showResult(d.success,d.success?d.message:(d.error||'未知错误'));if(d.success)setTimeout(()=>location.reload(),1500);}catch{showResult(false,'服务器响应异常');}});
+  xhr.addEventListener('error',()=>{uploadProg.classList.add('hidden');showResult(false,'网络错误，请检查服务器是否运行');});
+  xhr.send(fd);
+}
+</script>
+{% endblock %}

@@ -1,0 +1,80 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  /* ── Top nav ── */
+  .navlink {
+    @apply inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium
+           text-muted-foreground transition-colors hover:text-foreground;
+  }
+  .navlink.active { @apply text-foreground; }
+
+  /* ── Buttons (shadcn new-york) ── */
+  .btn {
+    @apply inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium
+           whitespace-nowrap transition-all outline-none cursor-pointer select-none
+           focus-visible:ring-2 focus-visible:ring-ring
+           disabled:pointer-events-none disabled:opacity-50
+           h-9 px-4 py-2;
+  }
+  .btn-default     { @apply bg-primary text-primary-foreground shadow-xs hover:opacity-90; }
+  .btn-outline     { @apply border border-border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground; }
+  .btn-secondary   { @apply bg-secondary text-secondary-foreground shadow-xs hover:bg-neutral-200; }
+  .btn-ghost       { @apply hover:bg-accent hover:text-accent-foreground; }
+  .btn-destructive { @apply bg-destructive text-destructive-foreground shadow-xs hover:opacity-90; }
+  .btn-sm          { @apply h-8 gap-1.5 rounded-md px-3 text-xs; }
+  .btn-xs          { @apply h-7 gap-1 rounded-md px-2 text-xs; }
+  .btn-icon        { @apply h-9 w-9 p-0; }
+
+  /* ── Badges (rounded-full) ── */
+  .badge {
+    @apply inline-flex w-fit shrink-0 items-center justify-center gap-1 rounded-full
+           border border-transparent px-2 py-0.5 text-xs font-medium whitespace-nowrap;
+  }
+  .badge-default     { @apply bg-primary text-primary-foreground; }
+  .badge-secondary   { @apply bg-secondary text-secondary-foreground; }
+  .badge-outline     { @apply border-border text-foreground; }
+  .badge-destructive { @apply bg-red-600 text-white; }
+  .badge-orange      { @apply bg-orange-50 text-orange-700 ring-1 ring-inset ring-orange-200; }
+  .badge-amber       { @apply bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200; }
+  .badge-blue        { @apply bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-200; }
+  .badge-sky         { @apply bg-sky-50 text-sky-700 ring-1 ring-inset ring-sky-200; }
+  .badge-emerald     { @apply bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200; }
+
+  .pill { @apply inline-flex items-center rounded-md bg-secondary px-2 py-0.5 text-xs font-medium text-muted-foreground; }
+
+  /* ── Card ── */
+  .card       { @apply rounded-xl border border-border bg-card text-card-foreground shadow-sm; }
+  .card-hd    { @apply flex items-center justify-between px-6 pt-5 pb-3; }
+  .card-title { @apply text-sm font-semibold leading-none; letter-spacing: -0.015em; }
+  .card-body  { @apply px-6 pb-5; }
+
+  /* ── Form controls ── */
+  .form-input {
+    @apply h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs
+           outline-none transition-colors placeholder:text-muted-foreground
+           focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50;
+  }
+  .form-select {
+    @apply h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs
+           outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring;
+  }
+  .form-label { @apply text-sm font-medium leading-none mb-2 block; }
+
+  /* ── Table ── */
+  .tbl-th  { @apply h-10 px-4 text-left align-middle text-xs font-medium text-muted-foreground; }
+  .tbl-td  { @apply px-4 py-3 align-middle text-sm; }
+  .tbl-row { @apply border-b border-border transition-colors hover:bg-muted; }
+
+  /* ── Alerts ── */
+  .alert       { @apply rounded-lg border px-4 py-3 text-sm; }
+  .alert-info  { @apply border-border bg-secondary text-foreground; }
+  .alert-warn  { @apply border-amber-200 bg-amber-50 text-amber-800; }
+  .alert-ok    { @apply border-emerald-200 bg-emerald-50 text-emerald-800; }
+  .alert-error { @apply border-red-200 bg-red-50 text-red-700; }
+
+  /* ── Page hero ── */
+  .hero-title { @apply text-2xl font-semibold; letter-spacing: -0.02em; }
+  .hero-sub   { @apply text-sm text-muted-foreground mt-1; }
+}

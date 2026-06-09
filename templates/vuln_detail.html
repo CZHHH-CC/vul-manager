@@ -1,0 +1,215 @@
+{% extends "base.html" %}
+{% block title %}{{ vuln.vit_number }} - 漏洞详情{% endblock %}
+
+{% block content %}
+
+<!-- Breadcrumb -->
+<nav class="flex items-center gap-1.5 text-sm text-muted-foreground mb-4">
+  <a href="/" class="hover:text-foreground transition-colors">仪表盘</a>
+  <span>/</span>
+  <a href="/vulns" class="hover:text-foreground transition-colors">漏洞列表</a>
+  <span>/</span>
+  <span class="text-foreground font-medium">{{ vuln.vit_number }}</span>
+</nav>
+
+<!-- Hero -->
+<div class="mb-6 flex items-start justify-between gap-4 flex-wrap">
+  <div class="min-w-0">
+    <div class="flex items-center gap-2.5 flex-wrap mb-1.5">
+      <h1 class="hero-title">{{ vuln.vit_number }}</h1>
+      {% if 'Critical' in (vuln.severity or '') %}<span class="badge badge-destructive">{{ vuln.severity }}</span>
+      {% elif 'High' in (vuln.severity or '') %}<span class="badge badge-orange">{{ vuln.severity }}</span>
+      {% elif 'Medium' in (vuln.severity or '') %}<span class="badge badge-amber">{{ vuln.severity }}</span>
+      {% else %}<span class="badge badge-secondary">{{ vuln.severity }}</span>{% endif %}
+      {% if vuln.state == 'Open' %}<span class="badge badge-blue">Open</span>
+      {% elif vuln.state == 'In Progress' %}<span class="badge badge-amber">In Progress</span>
+      {% elif vuln.state in ['Closed','Resolved'] %}<span class="badge badge-emerald">{{ vuln.state }}</span>
+      {% else %}<span class="badge badge-secondary">{{ vuln.state }}</span>{% endif %}
+    </div>
+    <p class="text-sm text-muted-foreground">{{ vuln.short_description }}</p>
+  </div>
+  <div class="flex items-center gap-2">
+    {% if vuln.state == 'Open' %}
+    <button class="btn btn-outline btn-sm" onclick="updateState('In Progress')">开始处理</button>
+    <button class="btn btn-default btn-sm" onclick="updateState('Closed')">标记修复</button>
+    {% elif vuln.state == 'In Progress' %}
+    <button class="btn btn-default btn-sm" onclick="updateState('Closed')">标记修复</button>
+    <button class="btn btn-outline btn-sm" onclick="updateState('Open')">重新打开</button>
+    {% elif vuln.state in ['Closed','Resolved'] %}
+    <button class="btn btn-outline btn-sm" onclick="updateState('Open')">重新打开</button>
+    {% endif %}
+  </div>
+</div>
+
+<div class="flex gap-6 items-start flex-col lg:flex-row">
+
+  <!-- Main -->
+  <div class="flex-1 min-w-0 space-y-4 w-full">
+
+    <!-- Basic info -->
+    <div class="card fade-in">
+      <div class="card-hd"><span class="card-title">基本信息</span></div>
+      <div class="card-body">
+        <dl class="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3 text-sm">
+          {% set rows = [
+            ('CVE 编号', vuln.cve_id, true),
+            ('负责团队', vuln.assignment_group or 'N/A', false),
+            ('主机名', vuln.hostname, false),
+            ('创建时间', vuln.opened_at.strftime('%Y-%m-%d %H:%M') if vuln.opened_at else 'N/A', false),
+            ('IP 地址', vuln.ip_address or 'N/A', false),
+            ('更新时间', vuln.updated_at.strftime('%Y-%m-%d %H:%M') if vuln.updated_at else 'N/A', false),
+            ('服务器类型', vuln.server_class, false),
+            ('导入时间', vuln.last_import_at.strftime('%Y-%m-%d %H:%M') if vuln.last_import_at else 'N/A', false),
+          ] %}
+          {% for label, val, mono in rows %}
+          <div class="flex gap-3">
+            <dt class="w-24 text-muted-foreground shrink-0">{{ label }}</dt>
+            <dd>{% if mono %}<code>{{ val }}</code>{% else %}{{ val }}{% endif %}</dd>
+          </div>
+          {% endfor %}
+        </dl>
+      </div>
+    </div>
+
+    <!-- Technical analysis -->
+    {% if analysis %}
+    <div class="card fade-in">
+      <div class="card-hd"><span class="card-title">技术分析</span></div>
+      <div class="card-body space-y-5">
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div class="rounded-lg border border-border p-3 text-center">
+            <p class="text-xs text-muted-foreground mb-1">CVSS 评分</p>
+            <p class="text-2xl font-semibold tracking-tightish {% if analysis.cvss_score and analysis.cvss_score >= 9 %}text-red-600{% elif analysis.cvss_score and analysis.cvss_score >= 7 %}text-orange-600{% endif %}">{{ analysis.cvss_score or 'N/A' }}</p>
+          </div>
+          <div class="rounded-lg border border-border p-3 text-center">
+            <p class="text-xs text-muted-foreground mb-1">攻击向量</p>
+            <p class="text-sm font-medium mt-1.5">{{ analysis.attack_vector or 'N/A' }}</p>
+          </div>
+          <div class="rounded-lg border border-border p-3 text-center">
+            <p class="text-xs text-muted-foreground mb-1">攻击复杂度</p>
+            <p class="text-sm font-medium mt-1.5">{{ analysis.attack_complexity or 'N/A' }}</p>
+          </div>
+          <div class="rounded-lg border border-border p-3 text-center">
+            <p class="text-xs text-muted-foreground mb-1">利用状态</p>
+            {% if analysis.exploit_status %}<div class="mt-1.5"><span class="badge badge-destructive">{{ analysis.exploit_status }}</span></div>
+            {% else %}<p class="text-sm text-muted-foreground mt-1.5">N/A</p>{% endif %}
+          </div>
+        </div>
+
+        {% if analysis.cvss_vector %}
+        <div><p class="text-xs text-muted-foreground mb-1.5">CVSS 向量</p><code class="text-xs">{{ analysis.cvss_vector }}</code></div>
+        {% endif %}
+
+        {% if analysis.affected_products %}
+        <div>
+          <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">受影响产品</p>
+          <div class="flex flex-wrap gap-1.5">
+            {% for product in analysis.affected_products.split('\n') %}{% if product.strip() %}<span class="badge badge-outline">{{ product.strip() }}</span>{% endif %}{% endfor %}
+          </div>
+        </div>
+        {% endif %}
+
+        {% if analysis.remediation_steps %}
+        <div>
+          <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">修复建议</p>
+          <div class="rounded-lg bg-muted p-4 text-sm leading-relaxed">{{ analysis.remediation_steps }}</div>
+        </div>
+        {% endif %}
+
+        {% if analysis.detection_logic %}
+        <div>
+          <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">检测逻辑</p>
+          <div class="rounded-lg bg-muted p-4 text-xs font-mono leading-relaxed">{{ analysis.detection_logic }}</div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- AI analysis -->
+    {% if analysis and analysis.ai_risk_summary %}
+    <div class="card fade-in">
+      <div class="card-hd">
+        <span class="card-title flex items-center gap-2">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>
+          </svg>
+          AI 智能分析
+        </span>
+        <span class="text-xs text-muted-foreground">{{ analysis.analyzed_at.strftime('%Y-%m-%d %H:%M') if analysis.analyzed_at else '' }}</span>
+      </div>
+      <div class="card-body space-y-4">
+        <div class="flex gap-5 items-start">
+          <div class="rounded-lg border border-border bg-muted p-4 text-center shrink-0 w-28">
+            <p class="text-xs text-muted-foreground mb-1">修复优先级</p>
+            <p class="text-3xl font-bold tracking-tightish {% if analysis.ai_fix_priority == 'P0' %}text-red-600{% elif analysis.ai_fix_priority == 'P1' %}text-orange-600{% elif analysis.ai_fix_priority == 'P2' %}text-amber-600{% else %}text-muted-foreground{% endif %}">{{ analysis.ai_fix_priority or 'N/A' }}</p>
+          </div>
+          <div class="flex-1 min-w-0">
+            <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">风险评估</p>
+            <p class="text-sm leading-relaxed">{{ analysis.ai_risk_summary }}</p>
+          </div>
+        </div>
+        {% if analysis.ai_remediation_guide %}
+        <div>
+          <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">操作指南</p>
+          <div class="rounded-lg bg-muted p-4 text-sm leading-relaxed">{{ analysis.ai_remediation_guide }}</div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Sidebar -->
+  <div class="w-full lg:w-72 shrink-0 space-y-4">
+    <div class="card fade-in">
+      <div class="card-hd"><span class="card-title">快速操作</span></div>
+      <div class="card-body space-y-2">
+        <button class="btn btn-outline btn-sm w-full justify-start" onclick="triggerSingleAnalysis()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
+          AI 重新分析
+        </button>
+        <a href="https://nvd.nist.gov/vuln/detail/{{ vuln.cve_id }}" target="_blank" class="btn btn-outline btn-sm w-full justify-start">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
+          查看 NVD
+        </a>
+        <a href="/api/reports/export" class="btn btn-outline btn-sm w-full justify-start">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+          导出报告
+        </a>
+      </div>
+    </div>
+
+    <div class="card fade-in">
+      <div class="card-hd"><span class="card-title">变更历史</span></div>
+      {% if history %}
+      <div class="border-t border-border divide-y divide-border">
+        {% for h in history %}
+        <div class="px-6 py-3">
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-xs font-medium">{{ h.field_changed }}</span>
+            <span class="text-xs text-muted-foreground">{{ h.changed_at.strftime('%m-%d %H:%M') if h.changed_at else '' }}</span>
+          </div>
+          <div class="flex items-center gap-1.5 text-xs">
+            <span class="text-muted-foreground line-through">{{ h.old_value or '空' }}</span>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-muted-foreground shrink-0"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+            <span class="font-medium">{{ h.new_value or '空' }}</span>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="card-body"><p class="text-sm text-muted-foreground text-center py-2">暂无变更记录</p></div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function updateState(s){ fetch(`/api/vulns/{{ vuln.vit_number }}?state=${s}`,{method:'PATCH'}).then(r=>r.json()).then(d=>{ if(d.success)location.reload(); else alert('更新失败: '+(d.error||'未知错误')); }); }
+function triggerSingleAnalysis(){ const b=event.currentTarget; b.disabled=true; b.textContent='分析中…'; fetch('/api/vulns/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(['{{ vuln.vit_number }}'])}).then(r=>r.json()).then(()=>{ alert('分析完成'); location.reload(); }).catch(e=>{ alert('分析失败: '+e); b.disabled=false; b.textContent='AI 重新分析'; }); }
+</script>
+{% endblock %}

@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Secrets / local config
+.env
+.claude/
+
+# Databases
+*.sqlite3
+*.db
+
+# Logs & temp
+*.log
+*.tmp
+*.bak
+
+# Tailwind standalone CLI (40MB binary; CSS is compiled in Docker / via the CLI)
+tailwindcss.exe
+tailwindcss
+static/js/tailwind.js
+
+# Runtime data (mounted volumes)
+/uploads/
+/reports/*.xlsx
+
+# IDE / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

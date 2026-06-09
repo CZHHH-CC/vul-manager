@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}404 - 页面未找到{% endblock %}
+
+{% block content %}
+<div class="flex flex-col items-center justify-center text-center py-28">
+  <p class="text-7xl font-bold tracking-tightish text-muted-foreground/30 mb-3">404</p>
+  <h1 class="text-xl font-semibold tracking-tightish mb-1">页面未找到</h1>
+  <p class="text-sm text-muted-foreground mb-6">您访问的漏洞工单不存在或已被删除</p>
+  <a href="/vulns" class="btn btn-default">返回漏洞列表</a>
+</div>
+{% endblock %}

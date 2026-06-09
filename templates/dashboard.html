@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% block title %}仪表盘 - 漏洞管理系统{% endblock %}
+
+{% block content %}
+
+<!-- Hero -->
+<div class="mb-8">
+  <h1 class="hero-title">仪表盘</h1>
+  <p class="hero-sub">整体漏洞态势概览与趋势分析</p>
+</div>
+
+<!-- Primary stats -->
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+  <div class="card card-body !pt-5 fade-in">
+    <p class="text-sm text-muted-foreground">总漏洞数</p>
+    <p class="text-3xl font-semibold tracking-tightish mt-1">{{ stats.total }}</p>
+  </div>
+  <div class="card card-body !pt-5 fade-in">
+    <p class="text-sm text-muted-foreground">严重漏洞</p>
+    <p class="text-3xl font-semibold tracking-tightish mt-1 text-red-600">{{ stats.critical }}</p>
+  </div>
+  <div class="card card-body !pt-5 fade-in">
+    <p class="text-sm text-muted-foreground">修复率</p>
+    <p class="text-3xl font-semibold tracking-tightish mt-1">{{ stats.fix_rate }}%</p>
+    <div class="progress-track mt-3 h-1.5"><div class="progress-fill" style="width: {{ stats.fix_rate }}%"></div></div>
+  </div>
+  <div class="card card-body !pt-5 fade-in">
+    <p class="text-sm text-muted-foreground">超期未修 <span class="text-xs">(&gt;30天)</span></p>
+    <p class="text-3xl font-semibold tracking-tightish mt-1 text-amber-600">{{ stats.overdue }}</p>
+  </div>
+</div>
+
+<!-- Secondary stats -->
+<div class="grid grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
+  {% set pills = [
+    ('高危', stats.high, 'text-orange-600'),
+    ('待修复', stats.open, 'text-blue-600'),
+    ('已修复', stats.closed, 'text-emerald-600'),
+    ('处理中', stats.in_progress, 'text-sky-600'),
+    ('受影响主机', stats.hosts_affected, ''),
+    ('涉及CVE', stats.cve_count, ''),
+  ] %}
+  {% for label, val, color in pills %}
+  <div class="card px-4 py-3 fade-in">
+    <p class="text-xs text-muted-foreground">{{ label }}</p>
+    <p class="text-xl font-semibold tracking-tightish mt-0.5 {{ color }}">{{ val }}</p>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Charts -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
+  <div class="card fade-in">
+    <div class="card-hd"><span class="card-title">严重程度分布</span></div>
+    <div class="card-body"><canvas id="severityChart" height="220"></canvas></div>
+  </div>
+  <div class="card fade-in">
+    <div class="card-hd"><span class="card-title">服务器类型分布</span></div>
+    <div class="card-body"><canvas id="classChart" height="220"></canvas></div>
+  </div>
+  <div class="card fade-in">
+    <div class="card-hd"><span class="card-title">状态分布</span></div>
+    <div class="card-body"><canvas id="stateChart" height="220"></canvas></div>
+  </div>
+</div>
+
+<!-- Top CVEs + trend -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+  <div class="card fade-in">
+    <div class="card-hd"><span class="card-title">Top 10 CVE（按主机数）</span></div>
+    <div class="overflow-x-auto">
+      <table class="w-full">
+        <thead><tr class="border-b border-border">
+          <th class="tbl-th">CVE 编号</th><th class="tbl-th">受影响主机</th>
+          <th class="tbl-th">工单数</th><th class="tbl-th">严重程度</th>
+        </tr></thead>
+        <tbody>
+          {% for cve in top_cves %}
+          <tr class="tbl-row">
+            <td class="tbl-td"><a href="/vulns?cve_id={{ cve.cve_id }}" class="font-mono text-xs hover:underline">{{ cve.cve_id }}</a></td>
+            <td class="tbl-td font-medium">{{ cve.host_count }}</td>
+            <td class="tbl-td text-muted-foreground">{{ cve.ticket_count }}</td>
+            <td class="tbl-td">
+              {% if 'Critical' in (cve.severity or '') %}<span class="badge badge-destructive">{{ cve.severity }}</span>
+              {% elif 'High' in (cve.severity or '') %}<span class="badge badge-orange">{{ cve.severity }}</span>
+              {% else %}<span class="badge badge-secondary">{{ cve.severity }}</span>{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="card fade-in">
+    <div class="card-hd"><span class="card-title">漏洞趋势（近 12 周）</span></div>
+    <div class="card-body"><canvas id="trendChart" height="260"></canvas></div>
+  </div>
+</div>
+
+<!-- Overdue -->
+{% if overdue %}
+<div class="card fade-in">
+  <div class="card-hd">
+    <span class="card-title flex items-center gap-2">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round" class="text-amber-500">
+        <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>
+      </svg>
+      超期未修复漏洞（&gt;30 天）
+    </span>
+  </div>
+  <div class="overflow-x-auto">
+    <table class="w-full">
+      <thead><tr class="border-b border-border">
+        <th class="tbl-th">VIT 编号</th><th class="tbl-th">CVE</th><th class="tbl-th">主机</th>
+        <th class="tbl-th">严重程度</th><th class="tbl-th">创建时间</th><th class="tbl-th"></th>
+      </tr></thead>
+      <tbody>
+        {% for v in overdue %}
+        <tr class="tbl-row">
+          <td class="tbl-td font-medium">{{ v.vit_number }}</td>
+          <td class="tbl-td"><code>{{ v.cve_id }}</code></td>
+          <td class="tbl-td text-muted-foreground">{{ v.hostname }}</td>
+          <td class="tbl-td">
+            {% if 'Critical' in (v.severity or '') %}<span class="badge badge-destructive">{{ v.severity }}</span>
+            {% else %}<span class="badge badge-orange">{{ v.severity }}</span>{% endif %}
+          </td>
+          <td class="tbl-td text-xs text-muted-foreground">{{ v.opened_at.strftime('%Y-%m-%d') if v.opened_at else 'N/A' }}</td>
+          <td class="tbl-td text-right"><a href="/vulns/{{ v.vit_number }}" class="btn btn-outline btn-sm">查看</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+Chart.defaults.font.family = "ui-sans-serif, system-ui, 'Segoe UI', 'Microsoft YaHei', sans-serif";
+Chart.defaults.color = '#737373';
+const D = { responsive:true, plugins:{ legend:{ position:'bottom', labels:{ boxWidth:8, boxHeight:8, padding:14, usePointStyle:true } } } };
+/* shadcn chart palette = blue scale; severity keeps semantic colors */
+const SEV = ['#dc2626','#f97316','#f59e0b','#a3a3a3'];
+const BLUE = ['#93c5fd','#3b82f6','#2563eb','#1d4ed8','#1e40af'];
+
+new Chart(severityChart,{type:'doughnut',data:{labels:{{ severity_dist|map(attribute='severity')|list|tojson }},
+  datasets:[{data:{{ severity_dist|map(attribute='count')|list|tojson }},backgroundColor:SEV,borderWidth:0}]},
+  options:{...D,cutout:'64%'}});
+
+new Chart(classChart,{type:'bar',data:{labels:{{ class_dist|map(attribute='class')|list|tojson }},
+  datasets:[{data:{{ class_dist|map(attribute='count')|list|tojson }},backgroundColor:'#2563eb',borderRadius:6,borderWidth:0,maxBarThickness:48}]},
+  options:{...D,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,grid:{color:'#f5f5f5'},border:{display:false}},x:{grid:{display:false},border:{display:false}}}}});
+
+new Chart(stateChart,{type:'doughnut',data:{labels:{{ state_dist|map(attribute='state')|list|tojson }},
+  datasets:[{data:{{ state_dist|map(attribute='count')|list|tojson }},backgroundColor:BLUE,borderWidth:0}]},
+  options:{...D,cutout:'64%'}});
+
+new Chart(trendChart,{type:'line',data:{labels:{{ trends|map(attribute='week')|list|tojson }},
+  datasets:[
+    {label:'总计',data:{{ trends|map(attribute='count')|list|tojson }},borderColor:'#2563eb',backgroundColor:'rgba(37,99,235,.08)',fill:true,tension:.4,pointRadius:0,borderWidth:2},
+    {label:'严重',data:{{ trends|map(attribute='critical')|list|tojson }},borderColor:'#dc2626',backgroundColor:'rgba(220,38,38,.06)',fill:true,tension:.4,pointRadius:0,borderWidth:2},
+    {label:'高危',data:{{ trends|map(attribute='high')|list|tojson }},borderColor:'#f97316',backgroundColor:'rgba(249,115,22,.06)',fill:true,tension:.4,pointRadius:0,borderWidth:2}
+  ]},
+  options:{...D,scales:{y:{beginAtZero:true,grid:{color:'#f5f5f5'},border:{display:false}},x:{grid:{display:false},border:{display:false}}}}});
+</script>
+{% endblock %}

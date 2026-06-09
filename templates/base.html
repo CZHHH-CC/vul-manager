@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}漏洞管理系统{% endblock %}</title>
+
+  <!-- Tailwind compiled to a static stylesheet at build time (no runtime JS engine, no external CDN) -->
+  <link href="/static/css/app.css" rel="stylesheet">
+  <link href="/static/css/style.css" rel="stylesheet">
+  {% block extra_css %}{% endblock %}
+</head>
+<body class="min-h-screen bg-background text-foreground">
+
+  <!-- ── Top navigation ── -->
+  <header class="sticky top-0 z-40 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+    <div class="mx-auto max-w-[1400px] px-6 h-14 flex items-center gap-6">
+
+      <!-- Brand -->
+      <a href="/" class="flex items-center gap-2 font-semibold tracking-tightish">
+        <span class="grid h-6 w-6 place-items-center rounded-md bg-primary text-primary-foreground">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+               stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/>
+          </svg>
+        </span>
+        <span class="text-sm">漏洞管理系统</span>
+      </a>
+
+      <!-- Primary nav -->
+      <nav class="hidden md:flex items-center gap-0.5">
+        <a href="/" class="navlink {% if request.url.path == '/' %}active{% endif %}">仪表盘</a>
+        <a href="/vulns" class="navlink {% if '/vulns' in request.url.path %}active{% endif %}">漏洞列表</a>
+        <a href="/upload" class="navlink {% if '/upload' in request.url.path %}active{% endif %}">上传数据</a>
+      </nav>
+
+      <!-- Right actions -->
+      <div class="ml-auto flex items-center gap-2">
+        <a href="/api/reports/export" target="_blank" class="navlink">导出报告</a>
+        <a href="/settings" class="btn btn-outline btn-sm {% if '/settings' in request.url.path %}!bg-accent{% endif %}">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+          设置
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- ── Page body ── -->
+  <main class="mx-auto max-w-[1400px] px-6 py-8">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="mx-auto max-w-[1400px] px-6 py-6 border-t border-border mt-4">
+    <p class="text-xs text-muted-foreground">漏洞管理系统 v1.0 · 数据更新时间: {{ now if now else 'N/A' }}</p>
+  </footer>
+
+  <script src="/static/js/chart.umd.min.js"></script>
+  {% block extra_js %}{% endblock %}
+</body>
+</html>
