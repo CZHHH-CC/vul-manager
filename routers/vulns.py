@@ -23,17 +23,19 @@ async def vuln_list_page(
     state: Optional[str] = None,
     cve_id: Optional[str] = None,
     hostname: Optional[str] = None,
+    server_class: Optional[str] = None,
     search: Optional[str] = None,
     sort_by: str = "severity_level",
     sort_order: str = "asc",
     page: int = 1,
+    page_size: int = 50,
     db: Session = Depends(get_db),
 ):
     """Render vulnerability list page."""
     result = get_vuln_list(
         db, severity=severity, state=state, cve_id=cve_id,
-        hostname=hostname, search=search, sort_by=sort_by,
-        sort_order=sort_order, page=page,
+        hostname=hostname, server_class=server_class, search=search,
+        sort_by=sort_by, sort_order=sort_order, page=page, page_size=page_size,
     )
     filters = get_filter_options(db)
 
@@ -42,6 +44,7 @@ async def vuln_list_page(
         "vulns": result["items"],
         "total": result["total"],
         "page": result["page"],
+        "page_size": result["page_size"],
         "total_pages": result["total_pages"],
         "filters": filters,
         "current_filters": {
@@ -49,6 +52,7 @@ async def vuln_list_page(
             "state": state,
             "cve_id": cve_id,
             "hostname": hostname,
+            "server_class": server_class,
             "search": search,
             "sort_by": sort_by,
             "sort_order": sort_order,

@@ -13,6 +13,14 @@
   <div class="card fade-in">
     <div class="card-body !pt-6 space-y-5">
 
+      <label class="flex items-center gap-3 cursor-pointer select-none">
+        <input type="checkbox" id="autoAnalyze" class="rounded border-border">
+        <div>
+          <span class="text-sm font-medium">上传后自动 AI 分析</span>
+          <p class="text-xs text-muted-foreground">导入完成后自动调用 AI 生成风险摘要和修复建议（需先在设置中配置 AI）</p>
+        </div>
+      </label>
+
       <div id="dropZone" class="rounded-xl border-2 border-dashed border-border p-10 text-center cursor-pointer transition-colors hover:border-foreground/40 hover:bg-muted/40 select-none">
         <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-3 text-muted-foreground">
           <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M12 18v-6"/><path d="m9 15 3 3 3-3"/>
@@ -95,10 +103,13 @@ function showResult(ok,m){uploadRes.classList.remove('hidden');resAlert.classNam
 function uploadFile(file){
   if(!file.name.match(/\.(xlsx|xls)$/i)){alert('请选择 Excel 文件 (.xlsx 或 .xls)');return;}
   const fd=new FormData();fd.append('file',file);
-  uploadProg.classList.remove('hidden');uploadRes.classList.add('hidden');setProgress(0);uploadStat.textContent='上传中…';
+  const autoAnalyze=document.getElementById('autoAnalyze').checked;
+  if(autoAnalyze)fd.append('auto_analyze','true');
+  uploadProg.classList.remove('hidden');uploadRes.classList.add('hidden');setProgress(0);
+  uploadStat.textContent=autoAnalyze?'上传中，完成后将自动进行 AI 分析…':'上传中…';
   const xhr=new XMLHttpRequest();xhr.open('POST','/api/upload');
   xhr.upload.addEventListener('progress',e=>{if(e.lengthComputable)setProgress(Math.round(e.loaded/e.total*100));});
-  xhr.addEventListener('load',()=>{uploadProg.classList.add('hidden');try{const d=JSON.parse(xhr.responseText);showResult(d.success,d.success?d.message:(d.error||'未知错误'));if(d.success)setTimeout(()=>location.reload(),1500);}catch{showResult(false,'服务器响应异常');}});
+  xhr.addEventListener('load',()=>{uploadProg.classList.add('hidden');try{const d=JSON.parse(xhr.responseText);let msg=d.message;if(d.ai_triggered)msg+=' AI 分析已在后台启动。';showResult(d.success,d.success?msg:(d.error||'未知错误'));if(d.success)setTimeout(()=>location.reload(),2000);}catch{showResult(false,'服务器响应异常');}});
   xhr.addEventListener('error',()=>{uploadProg.classList.add('hidden');showResult(false,'网络错误，请检查服务器是否运行');});
   xhr.send(fd);
 }
