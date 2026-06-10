@@ -61,6 +61,16 @@
         </select>
       </div>
 
+      <div>
+        <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">AI 分析</p>
+        <select class="form-select" name="ai_status">
+          <option value="">全部</option>
+          <option value="analyzed" {% if current_filters.ai_status == 'analyzed' %}selected{% endif %}>已分析</option>
+          <option value="rule_based" {% if current_filters.ai_status == 'rule_based' %}selected{% endif %}>规则优先级</option>
+          <option value="pending" {% if current_filters.ai_status == 'pending' %}selected{% endif %}>待分析</option>
+        </select>
+      </div>
+
       <div class="h-px bg-border"></div>
 
       <div>
