@@ -1,106 +1,91 @@
-"""Parse raw detection_logic text into structured, human-readable sections."""
+"""Parse raw detection_logic text to extract detected items (version + path)."""
 
 import re
 
 
 def parse_detection_logic(text: str | None) -> list[dict]:
-    """Parse detection logic text into a list of structured check steps.
+    """Extract detected items from detection logic text.
 
-    Each step contains:
-      - title: what was checked
-      - check_type: existence / inventory / version / unknown
-      - required: condition requirement string
-      - results: list of result strings
-      - evidence: list of evidence strings
+    Returns a flat list of detected items, each with:
+      - name: package/software name
+      - version: detected version string (if available)
+      - path: file/registry/package path (if available)
     """
     if not text or text in ("", "N/A", "None"):
         return []
 
-    # Remove the trailing metadata explanation (after 🔎)
-    note = ""
-    note_match = re.search(r"🔎\s*(.+?)$", text)
-    if note_match:
-        note = note_match.group(1).strip()
-        text = text[: note_match.start()].strip()
+    # Remove metadata after 🔎
+    text = re.split(r"🔎", text)[0].strip()
 
-    # Split by ▶ to get individual check steps
-    # Handle both "▶ " and "▶" (no space)
-    chunks = re.split(r"▶\s*", text)
-    steps = []
+    items = []
+    seen = set()
 
-    for chunk in chunks:
-        chunk = chunk.strip()
-        if not chunk:
-            continue
+    # Extract from "Found on asset" section: "name:: arch: xxx, evr: version"
+    for m in re.finditer(r"•\s*([\w\-\.]+)::\s*arch:\s*[\w_]+,\s*evr:\s*([\d:\.\-\w]+)", text):
+        name, version = m.group(1), m.group(2)
+        # Clean version: remove epoch prefix like "0:"
+        version = re.sub(r"^\d+:", "", version)
+        key = f"{name}@{version}"
+        if key not in seen:
+            seen.add(key)
+            items.append({"name": name, "version": version, "path": ""})
 
-        step = _parse_single_check(chunk)
-        if step:
-            steps.append(step)
+    # Extract from "Found on asset" section: "value: [version]"
+    for m in re.finditer(r"•\s*value:\s*\[([^\]]*)\]", text):
+        val = m.group(1).strip()
+        if val and val not in seen:
+            seen.add(val)
+            items.append({"name": "", "version": val, "path": ""})
 
-    # Attach note to last step
-    if steps and note:
-        steps[-1]["note"] = note
+    # Extract from "Evidence" section: "package: name-version.arch.ext"
+    for m in re.finditer(r"•\s*package:\s*(.+?)(?=•|$)", text):
+        pkg = m.group(1).strip()
+        if pkg and pkg not in seen:
+            seen.add(pkg)
+            # Try to split package name and version
+            name, version = _split_package_version(pkg)
+            items.append({"name": name, "version": version, "path": pkg})
 
-    return steps
+    # Extract from "Evidence" section: "filepath: /path/to/file"
+    for m in re.finditer(r"•\s*filepath:\s*(.+?)(?=•|$)", text):
+        path = m.group(1).strip()
+        if path and path not in seen:
+            seen.add(path)
+            items.append({"name": "", "version": "", "path": path})
+
+    # Extract from "Evidence" section: "registry_item: KEY\PATH"
+    for m in re.finditer(r"•\s*registry_item?\s*(?:KEY)?\s*:?\s*(.+?)(?=•|$)", text, re.IGNORECASE):
+        reg = m.group(1).strip()
+        if reg and reg not in seen and len(reg) > 3:
+            seen.add(reg)
+            items.append({"name": "", "version": "", "path": reg})
+
+    # Extract version from title: "Check if version of X is less than Y"
+    title_ver = re.search(r"version of\s+([\w\-\.]+)\s+is\s+(?:less than|greater than)\s+([\d:\.\-\w]+)", text)
+    if title_ver:
+        target_name = title_ver.group(1)
+        target_ver = re.sub(r"^\d+:", "", title_ver.group(2))
+        # Add as meta item if not already captured
+        if not any(i["name"] == target_name for i in items):
+            items.insert(0, {"name": target_name, "version": target_ver, "path": "", "is_target": True})
+
+    # Extract existence: "Check if X is installed" + "Item was found"
+    if "Item was found" in text:
+        exist_match = re.search(r"Check if\s+(.+?)\s+is\s+installed", text)
+        if exist_match:
+            name = exist_match.group(1).strip()
+            # Clean up name: remove parenthetical details
+            name = re.sub(r"\s*\(.*?\)\s*", "", name).strip()
+            if name and not any(i["name"] == name for i in items):
+                items.append({"name": name, "version": "", "path": ""})
+
+    return items
 
 
-def _parse_single_check(chunk: str) -> dict | None:
-    """Parse a single check step from text chunk."""
-    result = {
-        "title": "",
-        "check_type": "unknown",
-        "required": "",
-        "results": [],
-        "evidence": [],
-        "note": "",
-    }
-
-    # Extract title: everything before known keywords
-    # Known patterns: "No comparisons available", "Required:", "Found on asset:", "Evidence"
-    title_match = re.match(
-        r"^(.*?)(?:No comparisons available|Required:|Found on asset:|Evidence|inventory)",
-        chunk,
-        re.DOTALL,
-    )
-    if title_match:
-        result["title"] = title_match.group(1).strip()
-    else:
-        # Fallback: use first 120 chars
-        result["title"] = chunk[:120].strip()
-
-    # Clean up title: remove trailing parenthetical check details
-    result["title"] = re.sub(r"\([^)]*(?:less than|greater than|equals|matches)[^)]*\)\s*$", "", result["title"]).strip()
-
-    # Detect check type
-    if re.search(r"No comparisons available\s*:\s*Existence check", chunk):
-        result["check_type"] = "existence"
-    elif re.search(r"inventory", chunk, re.IGNORECASE) and "Evidence" in chunk:
-        result["check_type"] = "inventory"
-    elif re.search(r"less than|greater than|equals|matches", chunk):
-        result["check_type"] = "version"
-
-    # Extract Required condition
-    req_match = re.search(r"Required:\s*(.*?)(?=Found on asset:|Evidence|$)", chunk, re.DOTALL)
-    if req_match:
-        result["required"] = req_match.group(1).strip()
-
-    # Extract "Found on asset" results
-    found_section = re.search(r"Found on asset:\s*(.*?)(?=Evidence|$)", chunk, re.DOTALL)
-    if found_section:
-        items = re.findall(r"•\s*(.+?)(?=•|$)", found_section.group(1), re.DOTALL)
-        result["results"] = [item.strip() for item in items if item.strip()]
-
-    # If no "Found on asset" but has "Item was found"
-    if not result["results"] and "Item was found" in chunk:
-        result["results"] = ["Item was found"]
-
-    # Extract Evidence
-    evidence_section = re.search(r"Evidence\s*(?:\(registry / file\))?\s*:\s*(.*?)(?=🔎|$)", chunk, re.DOTALL)
-    if evidence_section:
-        items = re.findall(r"•\s*(.+?)(?=•|$)", evidence_section.group(1), re.DOTALL)
-        result["evidence"] = [item.strip() for item in items if item.strip()]
-
-    # Only return if we have something meaningful
-    if result["title"] or result["results"] or result["evidence"]:
-        return result
-    return None
+def _split_package_version(pkg: str) -> tuple[str, str]:
+    """Split a package string like 'kernel-5.14.0-611.45.1.el9_7.x86_64' into name and version."""
+    # Common patterns: name-version.arch.rpm or name-version
+    m = re.match(r"^([\w\-\.]+?)[\-](\d[\d:\.\-\w]+?)(?:\.(?:x86_64|amd64|noarch|i386|i686|aarch64|ppc64le|s390x|src))?(?:\.rpm)?$", pkg)
+    if m:
+        return m.group(1), m.group(2)
+    return pkg, ""
