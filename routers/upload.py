@@ -6,7 +6,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from db.database import get_db, SessionLocal
 from services.excel_parser import process_excel_upload
-from services.ai_analyzer import analyze_vulnerabilities
+from services.ai_analyzer import analyze_vulnerabilities, generate_fix_plans_bulk
 from services.vul_service import get_upload_history
 from routers.settings import get_ai_settings
 
@@ -24,12 +24,15 @@ async def upload_page(request: Request, db: Session = Depends(get_db)):
     })
 
 
-async def _run_ai_analysis():
-    """Background task: run AI analysis on unanalyzed vulns."""
+async def _run_ai_analysis(auto_fix_plan: bool = False):
+    """Background task: run AI analysis (and optionally fix plans) on vulns."""
     db = SessionLocal()
     try:
         ai_settings = get_ai_settings(db)
         await analyze_vulnerabilities(db, ai_settings)
+        if auto_fix_plan:
+            # Fix plans depend on analysis existing first, so run after.
+            await generate_fix_plans_bulk(db, ai_settings)
     except Exception:
         pass
     finally:
@@ -41,6 +44,7 @@ async def upload_excel(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     auto_analyze: str = Form("false"),
+    auto_fix_plan: str = Form("false"),
     db: Session = Depends(get_db),
 ):
     """Upload and process Excel file."""
@@ -62,12 +66,16 @@ async def upload_excel(
             **result,
         }
 
-        # Trigger AI analysis in background if requested
-        if auto_analyze.lower() == "true":
+        # Trigger AI analysis (and optionally fix plans) in background if requested
+        want_analyze = auto_analyze.lower() == "true"
+        want_fix_plan = auto_fix_plan.lower() == "true"
+        if want_analyze or want_fix_plan:
             ai_settings = get_ai_settings(db)
             if ai_settings.get("ai_enabled") and ai_settings.get("ai_api_key"):
-                background_tasks.add_task(_run_ai_analysis)
+                background_tasks.add_task(_run_ai_analysis, want_fix_plan)
                 response["ai_triggered"] = True
+                if want_fix_plan:
+                    response["message"] += "（已在后台启动 AI 分析 + 修复方案生成，耗时较长，请稍后刷新）"
             else:
                 response["message"] += " (AI 未配置，跳过自动分析)"
 

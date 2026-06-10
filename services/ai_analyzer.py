@@ -497,3 +497,44 @@ async def generate_and_review_fix_plan(db: Session, vit_number: str, ai_settings
         "fix_plan": fix_plan,
         "review": review,
     }
+
+
+async def generate_fix_plans_bulk(db: Session, ai_settings: dict,
+                                  only_missing: bool = True) -> dict:
+    """Generate + review fix plans for vulnerabilities that have an analysis.
+
+    Heavy operation (2 API calls per vuln); intended to run as a background task.
+    """
+    if not ai_settings.get("ai_enabled") or not ai_settings.get("ai_api_key"):
+        return {"generated": 0, "errors": 0, "total": 0}
+
+    candidates = [
+        v for v in db.query(Vulnerability).all()
+        if v.analysis and (not only_missing or not v.analysis.ai_fix_plan)
+    ]
+    if not candidates:
+        return {"generated": 0, "errors": 0, "total": 0}
+
+    generated = 0
+    errors = 0
+    semaphore = asyncio.Semaphore(3)  # fix plans are heavy; keep concurrency low
+
+    async def _one(vuln):
+        nonlocal generated, errors
+        async with semaphore:
+            fix_plan = await generate_fix_plan(vuln, ai_settings)
+            if not fix_plan:
+                errors += 1
+                return
+            vuln.analysis.ai_fix_plan = json.dumps(fix_plan, ensure_ascii=False)
+            review = await review_fix_plan(vuln, fix_plan, ai_settings)
+            if review:
+                vuln.analysis.ai_fix_plan_review = json.dumps(review, ensure_ascii=False)
+            generated += 1
+
+    batch_size = 30
+    for i in range(0, len(candidates), batch_size):
+        await asyncio.gather(*[_one(v) for v in candidates[i:i + batch_size]])
+        db.commit()
+
+    return {"generated": generated, "errors": errors, "total": len(candidates)}
