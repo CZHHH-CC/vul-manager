@@ -10,6 +10,7 @@ from services.vul_service import (
     get_vuln_history, get_filter_options, get_overdue_vulns,
 )
 from services.ai_analyzer import analyze_vulnerabilities
+from services.cve_lookup import enrich_cvss_scores
 from routers.settings import get_ai_settings
 
 router = APIRouter()
@@ -143,6 +144,16 @@ async def trigger_analysis(
     """API: Trigger AI analysis."""
     ai_settings = get_ai_settings(db)
     result = await analyze_vulnerabilities(db, ai_settings, vit_numbers)
+    return result
+
+
+@router.post("/api/vulns/enrich-cvss")
+async def enrich_cvss(
+    cve_ids: Optional[list[str]] = None,
+    db: Session = Depends(get_db),
+):
+    """API: Lookup missing CVSS scores from NVD by CVE ID."""
+    result = await enrich_cvss_scores(db, cve_ids)
     return result
 
 
