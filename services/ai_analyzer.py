@@ -20,6 +20,7 @@ CVSS向量: {cvss_vector}
 攻击复杂度: {attack_complexity}
 所需权限: {privileges_required}
 利用状态: {exploit_status}
+操作系统: {os_version}
 受影响产品: {affected_products}
 修复建议: {remediation_steps}
 漏洞描述摘要: {description_summary}
@@ -29,7 +30,12 @@ CVSS向量: {cvss_vector}
 
 1. "risk_summary": 2-3句话的风险评估摘要，说明该漏洞的危害程度和紧急性
 2. "fix_priority": 修复优先级，取值为 P0（立即修复）、P1（3天内）、P2（1周内）、P3（1个月内）
-3. "remediation_guide": 简洁的操作步骤指南，面向运维团队，不超过5条
+3. "remediation_guide": 针对【本主机实际情况】的具体修复指南（不超过6条），必须满足:
+   - 必须围绕上面"检测逻辑原文/受影响产品"中实际命中的具体组件和"操作系统"来写，禁止只给"打补丁/上WAF/限流"之类的泛泛建议
+   - 给出与该操作系统匹配的具体升级命令：Ubuntu/Debian 用 apt、RHEL/CentOS 用 yum/dnf、SUSE 用 zypper、Windows 用 winget 或系统更新、npm/pip 等语言组件用对应包管理器
+   - 若命中组件的版本已 EOL（停止维护，例如 Node.js 12/14、Python 2、CentOS 6/7、Ubuntu 16.04 等），必须明确指出"该版本已停止维护、不会再收到安全补丁"，并要求升级到受支持的大版本（给出目标版本）
+   - 最后一条给出修复后的验证方式（如检查版本号的命令）
+   - 若现有信息不足以确定目标安全版本，应说明"需进一步确认 XX"，不要编造版本号或命令
 4. "detected_components": 从"检测逻辑原文"中提取被检测到的组件列表，每个组件包含:
    - "name": 组件/软件名称（如 "Google Chrome", "kernel", "activemq"）
    - "version": 检测到的版本号（如 "144.0.7559.110"），没有则留空字符串
@@ -169,11 +175,14 @@ def _build_user_prompt(vuln: Vulnerability, analysis) -> str:
     """Build the user prompt for AI analysis."""
     desc_summary = get_description_summary(vuln.raw_description)
     detection_logic = (analysis.detection_logic[:800] if analysis and analysis.detection_logic else "N/A")
+    os_version = (analysis.os_version if analysis and analysis.os_version else "") \
+        or extract_os_version(vuln.raw_description) or "N/A"
     return RISK_ANALYSIS_PROMPT.format(
         vit_number=vuln.vit_number,
         cve_id=vuln.cve_id or "N/A",
         hostname=vuln.hostname or "N/A",
         server_class=vuln.server_class or "N/A",
+        os_version=os_version,
         severity=vuln.severity or "N/A",
         cvss_score=analysis.cvss_score if analysis else "N/A",
         cvss_vector=analysis.cvss_vector if analysis else "N/A",
@@ -198,11 +207,21 @@ def _parse_ai_response(content: str) -> Optional[dict]:
     try:
         return json.loads(content)
     except json.JSONDecodeError:
-        return None
+        pass
+    # Fallback: salvage the outermost {...} object (handles trailing prose / minor truncation)
+    start = content.find("{")
+    end = content.rfind("}")
+    if start >= 0 and end > start:
+        try:
+            return json.loads(content[start:end + 1])
+        except json.JSONDecodeError:
+            return None
+    return None
 
 
 async def _call_openai_compatible(client: httpx.AsyncClient, user_prompt: str,
-                                   base_url: str, api_key: str, model: str) -> Optional[str]:
+                                   base_url: str, api_key: str, model: str,
+                                   max_tokens: int = 1500) -> Optional[str]:
     """Call OpenAI-compatible API (OpenAI, DeepSeek, 百炼, 火山, etc.)."""
     response = await client.post(
         f"{base_url}/chat/completions",
@@ -217,7 +236,7 @@ async def _call_openai_compatible(client: httpx.AsyncClient, user_prompt: str,
                 {"role": "user", "content": user_prompt},
             ],
             "temperature": 0.3,
-            "max_tokens": 1000,
+            "max_tokens": max_tokens,
         },
     )
     response.raise_for_status()
@@ -226,7 +245,8 @@ async def _call_openai_compatible(client: httpx.AsyncClient, user_prompt: str,
 
 
 async def _call_anthropic(client: httpx.AsyncClient, user_prompt: str,
-                           base_url: str, api_key: str, model: str) -> Optional[str]:
+                           base_url: str, api_key: str, model: str,
+                           max_tokens: int = 1500) -> Optional[str]:
     """Call Anthropic Claude API."""
     response = await client.post(
         f"{base_url}/v1/messages",
@@ -237,7 +257,7 @@ async def _call_anthropic(client: httpx.AsyncClient, user_prompt: str,
         },
         json={
             "model": model,
-            "max_tokens": 1000,
+            "max_tokens": max_tokens,
             "system": SYSTEM_PROMPT,
             "messages": [
                 {"role": "user", "content": user_prompt},
@@ -265,9 +285,9 @@ async def analyze_single_vuln(vuln: Vulnerability, ai_settings: dict) -> Optiona
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
             if provider == "anthropic":
-                content = await _call_anthropic(client, user_prompt, base_url, api_key, model)
+                content = await _call_anthropic(client, user_prompt, base_url, api_key, model, max_tokens=2000)
             else:
-                content = await _call_openai_compatible(client, user_prompt, base_url, api_key, model)
+                content = await _call_openai_compatible(client, user_prompt, base_url, api_key, model, max_tokens=2000)
 
             if content:
                 return _parse_ai_response(content)
@@ -402,11 +422,11 @@ async def generate_fix_plan(vuln: Vulnerability, ai_settings: dict) -> Optional[
             if ai_settings.get("ai_provider") == "anthropic":
                 content = await _call_anthropic(client, user_prompt,
                     ai_settings.get("ai_base_url", ""), ai_settings["ai_api_key"],
-                    ai_settings.get("ai_model", ""))
+                    ai_settings.get("ai_model", ""), max_tokens=4000)
             else:
                 content = await _call_openai_compatible(client, user_prompt,
                     ai_settings.get("ai_base_url", ""), ai_settings["ai_api_key"],
-                    ai_settings.get("ai_model", ""))
+                    ai_settings.get("ai_model", ""), max_tokens=4000)
 
             if content:
                 return _parse_ai_response(content)
@@ -435,11 +455,11 @@ async def review_fix_plan(vuln: Vulnerability, fix_plan: dict, ai_settings: dict
             if ai_settings.get("ai_provider") == "anthropic":
                 content = await _call_anthropic(client, user_prompt,
                     ai_settings.get("ai_base_url", ""), ai_settings["ai_api_key"],
-                    ai_settings.get("ai_model", ""))
+                    ai_settings.get("ai_model", ""), max_tokens=3000)
             else:
                 content = await _call_openai_compatible(client, user_prompt,
                     ai_settings.get("ai_base_url", ""), ai_settings["ai_api_key"],
-                    ai_settings.get("ai_model", ""))
+                    ai_settings.get("ai_model", ""), max_tokens=3000)
 
             if content:
                 return _parse_ai_response(content)
