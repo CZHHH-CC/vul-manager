@@ -111,6 +111,45 @@ CVE编号: {cve_id}
 SYSTEM_PROMPT = "你是网络安全漏洞分析专家，只输出JSON格式的结果。"
 
 
+def extract_os_version(raw_desc: str) -> str:
+    """Extract OS version from raw description HTML using regex."""
+    if not raw_desc:
+        return ""
+
+    import re
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(str(raw_desc), "lxml")
+    text = soup.get_text(separator=" ", strip=True)
+
+    # Windows Server versions
+    m = re.search(r"Windows Server\s*(\d{4})", text)
+    if m:
+        return f"Windows Server {m.group(1)}"
+
+    # Linux distributions
+    patterns = [
+        (r"Ubuntu\s+(\d+\.\d+)", "Ubuntu"),
+        (r"RHEL\s+(\d+\.\d+)", "RHEL"),
+        (r"Red Hat Enterprise Linux\s+(\d+\.\d+)", "RHEL"),
+        (r"CentOS\s+(\d+)", "CentOS"),
+        (r"Debian\s+(\d+)", "Debian"),
+        (r"SUSE\s+(\d+)", "SUSE"),
+        (r"Amazon Linux\s+(\d+)", "Amazon Linux"),
+    ]
+    for pattern, name in patterns:
+        m = re.search(pattern, text, re.IGNORECASE)
+        if m:
+            return f"{name} {m.group(1)}"
+
+    # Fallback: check for generic OS mentions
+    if "Windows" in text:
+        return "Windows"
+    if "Linux" in text or "Ubuntu" in text or "RHEL" in text:
+        return "Linux"
+
+    return ""
+
+
 def get_description_summary(raw_desc: str, max_len: int = 500) -> str:
     """Extract a short text summary from HTML description."""
     if not raw_desc:
@@ -300,8 +339,20 @@ async def analyze_vulnerabilities(db: Session, ai_settings: dict,
             if components:
                 import json as _json
                 vuln.analysis.detected_components = _json.dumps(components, ensure_ascii=False)
-            # Save OS version
-            os_ver = result.get("os_version")
+            # Save OS version (prefer regex extraction from description)
+            os_ver = extract_os_version(vuln.raw_description)
+            # If regex found a specific version, use it; otherwise use AI result
+            if not os_ver or os_ver in ("Windows", "Linux"):
+                ai_os = result.get("os_version", "")
+                if ai_os and ai_os not in ("Windows", "Linux"):
+                    os_ver = ai_os
+            # If still generic, try to get version from server_class context
+            if os_ver in ("Windows", "Linux") and vuln.server_class:
+                sc = vuln.server_class.lower()
+                if "windows" in sc and os_ver == "Windows":
+                    os_ver = "Windows Server"
+                elif "linux" in sc and os_ver == "Linux":
+                    os_ver = "Linux Server"
             if os_ver:
                 vuln.analysis.os_version = os_ver
             vuln.analysis.analyzed_at = datetime.utcnow()
