@@ -1,12 +1,14 @@
 import os
 import tempfile
-from fastapi import APIRouter, UploadFile, File, Depends, Request
+from fastapi import APIRouter, UploadFile, File, Depends, Request, Form, BackgroundTasks
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
-from db.database import get_db
+from db.database import get_db, SessionLocal
 from services.excel_parser import process_excel_upload
+from services.ai_analyzer import analyze_vulnerabilities
 from services.vul_service import get_upload_history
+from routers.settings import get_ai_settings
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
@@ -22,8 +24,25 @@ async def upload_page(request: Request, db: Session = Depends(get_db)):
     })
 
 
+async def _run_ai_analysis():
+    """Background task: run AI analysis on unanalyzed vulns."""
+    db = SessionLocal()
+    try:
+        ai_settings = get_ai_settings(db)
+        await analyze_vulnerabilities(db, ai_settings)
+    except Exception:
+        pass
+    finally:
+        db.close()
+
+
 @router.post("/api/upload")
-async def upload_excel(file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def upload_excel(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    auto_analyze: str = Form("false"),
+    db: Session = Depends(get_db),
+):
     """Upload and process Excel file."""
     if not file.filename.endswith((".xlsx", ".xls")):
         return {"error": "Please upload an Excel file (.xlsx or .xls)"}
@@ -36,11 +55,23 @@ async def upload_excel(file: UploadFile = File(...), db: Session = Depends(get_d
 
     try:
         result = process_excel_upload(db, tmp_path, file.filename)
-        return {
+        response = {
             "success": True,
             "message": f"处理完成: 新增 {result['new']} 条, 更新 {result['updated']} 条, 失败 {result['errors']} 条",
+            "ai_triggered": False,
             **result,
         }
+
+        # Trigger AI analysis in background if requested
+        if auto_analyze.lower() == "true":
+            ai_settings = get_ai_settings(db)
+            if ai_settings.get("enabled") and ai_settings.get("api_key"):
+                background_tasks.add_task(_run_ai_analysis)
+                response["ai_triggered"] = True
+            else:
+                response["message"] += " (AI 未配置，跳过自动分析)"
+
+        return response
     except Exception as e:
         return {"error": f"Processing failed: {str(e)}"}
     finally:

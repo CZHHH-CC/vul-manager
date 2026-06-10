@@ -165,15 +165,32 @@
       </div>
 
       {% if total_pages > 1 %}
-      <div class="flex items-center justify-center gap-1 border-t border-border px-4 py-3">
-        {% if page > 1 %}<a href="?page={{ page-1 }}&{{ request.query_params | replace('page=' ~ page, '') }}" class="btn btn-ghost btn-sm">上一页</a>{% endif %}
-        {% for p in range(1, total_pages + 1) %}
-          {% if p == page %}<span class="btn btn-default btn-sm pointer-events-none">{{ p }}</span>
-          {% elif p <= 3 or p >= total_pages - 2 or (p >= page - 2 and p <= page + 2) %}
-          <a href="?page={{ p }}&{{ request.query_params | replace('page=' ~ page, '') }}" class="btn btn-ghost btn-sm">{{ p }}</a>
-          {% elif p == 4 or p == total_pages - 3 %}<span class="px-2 text-muted-foreground text-sm">…</span>{% endif %}
-        {% endfor %}
-        {% if page < total_pages %}<a href="?page={{ page+1 }}&{{ request.query_params | replace('page=' ~ page, '') }}" class="btn btn-ghost btn-sm">下一页</a>{% endif %}
+      <div class="flex items-center justify-between border-t border-border px-4 py-3">
+        <!-- Page size selector (left) -->
+        <div class="flex items-center gap-2 text-sm text-muted-foreground">
+          <span>每页</span>
+          <select id="pageSizeSelect" class="form-select !h-8 !w-16 text-sm" onchange="changePageSize(this.value)">
+            {% for size in [20, 50, 100, 200] %}
+            <option value="{{ size }}" {% if page_size == size %}selected{% endif %}>{{ size }}</option>
+            {% endfor %}
+          </select>
+          <span>条</span>
+        </div>
+
+        <!-- Pagination (center) -->
+        <div class="flex items-center gap-1">
+          {% if page > 1 %}<a href="?page={{ page-1 }}&{{ request.query_params | replace('page=' ~ page, '') }}" class="btn btn-ghost btn-sm">上一页</a>{% endif %}
+          {% for p in range(1, total_pages + 1) %}
+            {% if p == page %}<span class="btn btn-default btn-sm pointer-events-none">{{ p }}</span>
+            {% elif p <= 3 or p >= total_pages - 2 or (p >= page - 2 and p <= page + 2) %}
+            <a href="?page={{ p }}&{{ request.query_params | replace('page=' ~ page, '') }}" class="btn btn-ghost btn-sm">{{ p }}</a>
+            {% elif p == 4 or p == total_pages - 3 %}<span class="px-2 text-muted-foreground text-sm">…</span>{% endif %}
+          {% endfor %}
+          {% if page < total_pages %}<a href="?page={{ page+1 }}&{{ request.query_params | replace('page=' ~ page, '') }}" class="btn btn-ghost btn-sm">下一页</a>{% endif %}
+        </div>
+
+        <!-- Right spacer for balance -->
+        <div class="w-28"></div>
       </div>
       {% endif %}
     </div>
@@ -190,6 +207,7 @@ function submitSearch(){ document.getElementById('searchHidden').value = documen
 function showToast(type,msg){ const t=document.getElementById('toast'),c=document.getElementById('toastContent'); c.className='alert shadow-sm min-w-[260px] alert-'+type; c.textContent=msg; t.classList.remove('hidden'); setTimeout(()=>t.classList.add('hidden'),4000); }
 function updateState(v,s){ if(!confirm(`确定将 ${v} 标记为 ${s}？`))return; fetch(`/api/vulns/${v}?state=${s}`,{method:'PATCH'}).then(r=>r.json()).then(d=>{ if(d.success)location.reload(); else showToast('error','更新失败: '+(d.error||'未知错误')); }); }
 function triggerAnalysis(){ if(!confirm('将对所有未分析的漏洞执行 AI 分析，可能需要几分钟。继续？'))return; const b=event.currentTarget; b.disabled=true; b.textContent='分析中…'; fetch('/api/vulns/analyze',{method:'POST'}).then(r=>r.json()).then(d=>{ showToast('ok',`分析完成：成功 ${d.analyzed||0} 条，失败 ${d.errors||0} 条`); setTimeout(()=>location.reload(),1500); }).catch(e=>{ showToast('error','分析请求失败: '+e); b.disabled=false; b.textContent='AI 分析'; }); }
+function changePageSize(size){ const p=new URLSearchParams(window.location.search); p.set('page_size',size); p.set('page','1'); window.location.search=p.toString(); }
 
 // Batch selection
 function getSelected(){ return Array.from(document.querySelectorAll('.row-cb:checked')).map(cb=>cb.value); }
