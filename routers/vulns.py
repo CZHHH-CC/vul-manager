@@ -10,6 +10,8 @@ from services.vul_service import (
     get_vuln_history, get_filter_options, get_overdue_vulns,
 )
 from services.ai_analyzer import analyze_vulnerabilities
+from services.cve_lookup import enrich_cvss_scores
+from services.detection_parser import parse_detection_logic
 from routers.settings import get_ai_settings
 
 router = APIRouter()
@@ -109,12 +111,14 @@ async def vuln_detail_page(
         return templates.TemplateResponse("404.html", {"request": request}, status_code=404)
 
     history = get_vuln_history(db, vit_number)
+    detection_steps = parse_detection_logic(vuln.analysis.detection_logic) if vuln.analysis else []
 
     return templates.TemplateResponse("vuln_detail.html", {
         "request": request,
         "vuln": vuln,
         "analysis": vuln.analysis,
         "history": history,
+        "detection_steps": detection_steps,
     })
 
 

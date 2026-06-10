@@ -5,6 +5,7 @@ from fastapi.templating import Jinja2Templates
 from db.database import engine, Base
 from db.models import Settings, Vulnerability, VulnAnalysis, VulnHistory, UploadLog
 from routers import upload, vulns, dashboard, reports, settings
+from services.detection_parser import parse_detection_logic
 from config import HOST, PORT
 
 # Create tables

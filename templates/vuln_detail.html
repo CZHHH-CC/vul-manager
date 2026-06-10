@@ -116,10 +116,74 @@
         </div>
         {% endif %}
 
-        {% if analysis.detection_logic %}
+        {% if detection_steps %}
+        <div>
+          <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">检测逻辑</p>
+          <div class="space-y-3">
+            {% for step in detection_steps %}
+            <div class="rounded-lg border border-border overflow-hidden">
+              <!-- Step header -->
+              <div class="flex items-center gap-2 px-4 py-2.5 bg-muted/50">
+                <span class="flex items-center justify-center w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold shrink-0">{{ loop.index }}</span>
+                <span class="text-sm font-medium truncate">{{ step.title or '检测步骤' }}</span>
+                {% if step.check_type == 'existence' %}<span class="badge badge-blue text-xs shrink-0">存在性检查</span>
+                {% elif step.check_type == 'inventory' %}<span class="badge badge-amber text-xs shrink-0">清单检查</span>
+                {% elif step.check_type == 'version' %}<span class="badge badge-orange text-xs shrink-0">版本检查</span>
+                {% endif %}
+              </div>
+
+              <!-- Step body -->
+              <div class="px-4 py-3 space-y-2.5 text-sm">
+                {% if step.required %}
+                <div class="flex items-start gap-2">
+                  <span class="text-xs text-muted-foreground shrink-0 w-16 pt-0.5">要求</span>
+                  <span class="text-xs">{{ step.required }}</span>
+                </div>
+                {% endif %}
+
+                {% if step.results %}
+                <div class="flex items-start gap-2">
+                  <span class="text-xs text-muted-foreground shrink-0 w-16 pt-0.5">结果</span>
+                  <div class="flex flex-wrap gap-1.5">
+                    {% for r in step.results %}
+                    <span class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                      {{ r }}
+                    </span>
+                    {% endfor %}
+                  </div>
+                </div>
+                {% endif %}
+
+                {% if step.evidence %}
+                <div class="flex items-start gap-2">
+                  <span class="text-xs text-muted-foreground shrink-0 w-16 pt-0.5">证据</span>
+                  <div class="flex-1 space-y-1">
+                    {% for e in step.evidence %}
+                    <div class="flex items-start gap-1.5 text-xs">
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="shrink-0 mt-0.5 text-muted-foreground"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
+                      <code class="text-xs bg-muted px-1.5 py-0.5 rounded">{{ e }}</code>
+                    </div>
+                    {% endfor %}
+                  </div>
+                </div>
+                {% endif %}
+
+                {% if step.note %}
+                <div class="flex items-start gap-2 pt-1 border-t border-border">
+                  <span class="text-xs text-muted-foreground shrink-0 w-16 pt-0.5">说明</span>
+                  <span class="text-xs text-muted-foreground italic">{{ step.note }}</span>
+                </div>
+                {% endif %}
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% elif analysis and analysis.detection_logic %}
         <div>
           <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">检测逻辑</p>
-          <div class="rounded-lg bg-muted p-4 text-xs font-mono leading-relaxed">{{ analysis.detection_logic }}</div>
+          <div class="rounded-lg bg-muted p-4 text-xs font-mono leading-relaxed whitespace-pre-wrap">{{ analysis.detection_logic }}</div>
         </div>
         {% endif %}
       </div>
