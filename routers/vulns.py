@@ -2,12 +2,14 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Request, Query
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from db.database import get_db
 from db.models import Vulnerability
 from services.vul_service import (
     get_vuln_list, get_vuln_detail, update_vuln_state,
     get_vuln_history, get_filter_options, get_overdue_vulns,
+    delete_vulns_by_numbers,
 )
 from services.ai_analyzer import analyze_vulnerabilities
 from services.cve_lookup import enrich_cvss_scores
@@ -147,6 +149,22 @@ async def update_vuln(
         "vit_number": vuln.vit_number,
         "state": vuln.state,
     }
+
+
+class BatchDeleteRequest(BaseModel):
+    vit_numbers: list[str]
+
+
+@router.delete("/api/vulns")
+async def batch_delete_vulns(
+    body: BatchDeleteRequest,
+    db: Session = Depends(get_db),
+):
+    """API: Batch delete vulnerabilities by vit_number list."""
+    if not body.vit_numbers:
+        return {"error": "请提供要删除的漏洞编号"}
+    deleted = delete_vulns_by_numbers(db, body.vit_numbers)
+    return {"success": True, "deleted": deleted}
 
 
 @router.post("/api/vulns/analyze")

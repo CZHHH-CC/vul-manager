@@ -289,3 +289,19 @@ def export_vulns_for_report(db: Session, severity: Optional[str] = None, state: 
         })
 
     return result
+
+
+# ─── Batch Delete ────────────────────────────────────────────────────────────
+
+def delete_vulns_by_numbers(db: Session, vit_numbers: list[str]) -> int:
+    """Delete vulnerabilities by vit_number list. Returns count deleted."""
+    vulns = db.query(Vulnerability).filter(
+        Vulnerability.vit_number.in_(vit_numbers)
+    ).all()
+
+    count = len(vulns)
+    for v in vulns:
+        db.delete(v)
+
+    db.commit()
+    return count
