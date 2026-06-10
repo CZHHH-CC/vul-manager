@@ -2,15 +2,18 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Request, Query
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from db.database import get_db
 from db.models import Vulnerability
 from services.vul_service import (
     get_vuln_list, get_vuln_detail, update_vuln_state,
     get_vuln_history, get_filter_options, get_overdue_vulns,
+    delete_vulns_by_numbers,
 )
 from services.ai_analyzer import analyze_vulnerabilities
 from services.cve_lookup import enrich_cvss_scores
+from services.detection_parser import parse_detection_logic
 from routers.settings import get_ai_settings
 
 router = APIRouter()
@@ -24,7 +27,7 @@ async def vuln_list_page(
     state: Optional[str] = None,
     cve_id: Optional[str] = None,
     hostname: Optional[str] = None,
-    server_class: Optional[str] = None,
+    ai_status: Optional[str] = None,
     search: Optional[str] = None,
     sort_by: str = "severity_level",
     sort_order: str = "asc",
@@ -35,7 +38,7 @@ async def vuln_list_page(
     """Render vulnerability list page."""
     result = get_vuln_list(
         db, severity=severity, state=state, cve_id=cve_id,
-        hostname=hostname, server_class=server_class, search=search,
+        hostname=hostname, ai_status=ai_status, search=search,
         sort_by=sort_by, sort_order=sort_order, page=page, page_size=page_size,
     )
     filters = get_filter_options(db)
@@ -53,7 +56,7 @@ async def vuln_list_page(
             "state": state,
             "cve_id": cve_id,
             "hostname": hostname,
-            "server_class": server_class,
+            "ai_status": ai_status,
             "search": search,
             "sort_by": sort_by,
             "sort_order": sort_order,
@@ -115,11 +118,23 @@ async def vuln_detail_page(
 
     history = get_vuln_history(db, vit_number)
 
+    # Try AI-extracted components first, fall back to regex parser
+    detected_components = []
+    if vuln.analysis and vuln.analysis.detected_components:
+        try:
+            import json
+            detected_components = json.loads(vuln.analysis.detected_components)
+        except (json.JSONDecodeError, TypeError):
+            pass
+    if not detected_components and vuln.analysis:
+        detected_components = parse_detection_logic(vuln.analysis.detection_logic)
+
     return templates.TemplateResponse("vuln_detail.html", {
         "request": request,
         "vuln": vuln,
         "analysis": vuln.analysis,
         "history": history,
+        "detected_components": detected_components,
     })
 
 
@@ -140,6 +155,22 @@ async def update_vuln(
     }
 
 
+class BatchDeleteRequest(BaseModel):
+    vit_numbers: list[str]
+
+
+@router.delete("/api/vulns")
+async def batch_delete_vulns(
+    body: BatchDeleteRequest,
+    db: Session = Depends(get_db),
+):
+    """API: Batch delete vulnerabilities by vit_number list."""
+    if not body.vit_numbers:
+        return {"error": "请提供要删除的漏洞编号"}
+    deleted = delete_vulns_by_numbers(db, body.vit_numbers)
+    return {"success": True, "deleted": deleted}
+
+
 @router.post("/api/vulns/analyze")
 async def trigger_analysis(
     vit_numbers: Optional[list[str]] = None,
@@ -148,16 +179,6 @@ async def trigger_analysis(
     """API: Trigger AI analysis."""
     ai_settings = get_ai_settings(db)
     result = await analyze_vulnerabilities(db, ai_settings, vit_numbers)
-    return result
-
-
-@router.post("/api/vulns/enrich-cvss")
-async def enrich_cvss(
-    cve_ids: Optional[list[str]] = None,
-    db: Session = Depends(get_db),
-):
-    """API: Lookup missing CVSS scores from NVD by CVE ID."""
-    result = await enrich_cvss_scores(db, cve_ids)
     return result
 
 

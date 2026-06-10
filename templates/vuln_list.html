@@ -61,6 +61,16 @@
         </select>
       </div>
 
+      <div>
+        <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">AI 分析</p>
+        <select class="form-select" name="ai_status">
+          <option value="">全部</option>
+          <option value="analyzed" {% if current_filters.ai_status == 'analyzed' %}selected{% endif %}>已分析</option>
+          <option value="rule_based" {% if current_filters.ai_status == 'rule_based' %}selected{% endif %}>规则优先级</option>
+          <option value="pending" {% if current_filters.ai_status == 'pending' %}selected{% endif %}>待分析</option>
+        </select>
+      </div>
+
       <div class="h-px bg-border"></div>
 
       <div>
@@ -93,17 +103,28 @@
              onkeydown="if(event.key==='Enter'){submitSearch()}">
     </div>
 
+    <!-- Batch action bar -->
+    <div id="batchBar" class="hidden mb-3 flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-2.5">
+      <span class="text-sm text-muted-foreground">已选 <strong id="selectedCount" class="text-foreground">0</strong> 条</span>
+      <button class="btn btn-outline btn-sm text-red-600 border-red-200 hover:bg-red-50" onclick="batchDelete()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
+        删除所选
+      </button>
+    </div>
+
     <div class="card overflow-hidden">
       <div class="overflow-x-auto">
         <table class="w-full">
           <thead><tr class="border-b border-border bg-muted/40">
+            <th class="tbl-th w-10"><input type="checkbox" id="selectAll" onchange="toggleSelectAll(this)" class="rounded border-border"></th>
             <th class="tbl-th">VIT 编号</th><th class="tbl-th">CVE 编号</th><th class="tbl-th">主机名</th>
             <th class="tbl-th">类型</th><th class="tbl-th">严重程度</th><th class="tbl-th">CVSS</th>
-            <th class="tbl-th">状态</th><th class="tbl-th">优先级</th><th class="tbl-th">创建时间</th><th class="tbl-th text-right pr-4">操作</th>
+            <th class="tbl-th">状态</th><th class="tbl-th">优先级</th><th class="tbl-th">AI 分析</th><th class="tbl-th">创建时间</th><th class="tbl-th text-right pr-4">操作</th>
           </tr></thead>
           <tbody>
             {% for vuln in vulns %}
             <tr class="tbl-row">
+              <td class="tbl-td"><input type="checkbox" class="row-cb rounded border-border" value="{{ vuln.vit_number }}" onchange="updateSelection()"></td>
               <td class="tbl-td"><a href="/vulns/{{ vuln.vit_number }}" class="font-medium hover:underline">{{ vuln.vit_number }}</a></td>
               <td class="tbl-td"><code>{{ vuln.cve_id }}</code></td>
               <td class="tbl-td text-muted-foreground max-w-[140px] truncate">{{ vuln.hostname }}</td>
@@ -135,6 +156,15 @@
                   {% elif p == 'P2' %}<span class="badge badge-amber">P2</span>
                   {% else %}<span class="badge badge-secondary">P3</span>{% endif %}
                 {% else %}<span class="text-muted-foreground">—</span>{% endif %}
+              </td>
+              <td class="tbl-td">
+                {% if vuln.analysis and vuln.analysis.ai_risk_summary %}
+                  <span class="badge badge-emerald text-xs">已分析</span>
+                {% elif vuln.analysis and vuln.analysis.ai_fix_priority %}
+                  <span class="badge badge-blue text-xs">规则优先级</span>
+                {% else %}
+                  <span class="text-muted-foreground text-xs">待分析</span>
+                {% endif %}
               </td>
               <td class="tbl-td text-xs text-muted-foreground">{{ vuln.opened_at.strftime('%Y-%m-%d') if vuln.opened_at else '—' }}</td>
               <td class="tbl-td">
@@ -196,11 +226,27 @@ function submitSearch(){ document.getElementById('searchHidden').value = documen
 function showToast(type,msg){ const t=document.getElementById('toast'),c=document.getElementById('toastContent'); c.className='alert shadow-sm min-w-[260px] alert-'+type; c.textContent=msg; t.classList.remove('hidden'); setTimeout(()=>t.classList.add('hidden'),4000); }
 function updateState(v,s){ if(!confirm(`确定将 ${v} 标记为 ${s}？`))return; fetch(`/api/vulns/${v}?state=${s}`,{method:'PATCH'}).then(r=>r.json()).then(d=>{ if(d.success)location.reload(); else showToast('error','更新失败: '+(d.error||'未知错误')); }); }
 function triggerAnalysis(){ if(!confirm('将对所有未分析的漏洞执行 AI 分析，可能需要几分钟。继续？'))return; const b=event.currentTarget; b.disabled=true; b.textContent='分析中…'; fetch('/api/vulns/analyze',{method:'POST'}).then(r=>r.json()).then(d=>{ showToast('ok',`分析完成：成功 ${d.analyzed||0} 条，失败 ${d.errors||0} 条`); setTimeout(()=>location.reload(),1500); }).catch(e=>{ showToast('error','分析请求失败: '+e); b.disabled=false; b.textContent='AI 分析'; }); }
-function changePageSize(size){
-  const params = new URLSearchParams(window.location.search);
-  params.set('page_size', size);
-  params.set('page', '1');
-  window.location.search = params.toString();
+function changePageSize(size){ const p=new URLSearchParams(window.location.search); p.set('page_size',size); p.set('page','1'); window.location.search=p.toString(); }
+
+// Batch selection
+function getSelected(){ return Array.from(document.querySelectorAll('.row-cb:checked')).map(cb=>cb.value); }
+function updateSelection(){
+  const sel=getSelected(), total=document.querySelectorAll('.row-cb').length;
+  document.getElementById('selectedCount').textContent=sel.length;
+  document.getElementById('batchBar').classList.toggle('hidden', sel.length===0);
+  document.getElementById('selectAll').checked=sel.length>0 && sel.length===total;
+  document.getElementById('selectAll').indeterminate=sel.length>0 && sel.length<total;
+}
+function toggleSelectAll(el){ document.querySelectorAll('.row-cb').forEach(cb=>{cb.checked=el.checked}); updateSelection(); }
+function batchDelete(){
+  const sel=getSelected();
+  if(!sel.length) return;
+  if(!confirm(`确定删除选中的 ${sel.length} 条漏洞？此操作不可撤销。`)) return;
+  fetch('/api/vulns',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({vit_numbers:sel})})
+    .then(r=>r.json()).then(d=>{
+      if(d.success){ showToast('ok',`成功删除 ${d.deleted} 条`); setTimeout(()=>location.reload(),1000); }
+      else showToast('error','删除失败: '+(d.error||'未知错误'));
+    }).catch(e=>showToast('error','删除请求失败: '+e));
 }
 </script>
 {% endblock %}

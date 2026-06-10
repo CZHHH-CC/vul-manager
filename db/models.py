@@ -56,6 +56,7 @@ class VulnAnalysis(Base):
     ai_risk_summary = Column(Text)
     ai_fix_priority = Column(String(32))
     ai_remediation_guide = Column(Text)
+    detected_components = Column(Text)  # JSON array of {name, version, path}
     analyzed_at = Column(DateTime)
 
     vulnerability = relationship("Vulnerability", back_populates="analysis")

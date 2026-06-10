@@ -116,10 +116,38 @@
         </div>
         {% endif %}
 
-        {% if analysis.detection_logic %}
+        {% if detected_components %}
+        <div>
+          <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">检测到的组件</p>
+          <div class="rounded-lg border border-border overflow-hidden">
+            <table class="w-full text-sm">
+              <thead><tr class="border-b border-border bg-muted/40">
+                <th class="tbl-th">组件</th>
+                <th class="tbl-th">版本</th>
+                <th class="tbl-th">路径</th>
+              </tr></thead>
+              <tbody>
+                {% for item in detected_components %}
+                <tr class="tbl-row">
+                  <td class="tbl-td font-medium">{{ item.name or '—' }}</td>
+                  <td class="tbl-td">
+                    {% if item.version %}<code class="text-xs bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded border border-emerald-200">{{ item.version }}</code>
+                    {% else %}<span class="text-muted-foreground">—</span>{% endif %}
+                  </td>
+                  <td class="tbl-td">
+                    {% if item.path %}<code class="text-xs">{{ item.path }}</code>
+                    {% else %}<span class="text-muted-foreground">—</span>{% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {% elif analysis and analysis.detection_logic %}
         <div>
           <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">检测逻辑</p>
-          <div class="rounded-lg bg-muted p-4 text-xs font-mono leading-relaxed">{{ analysis.detection_logic }}</div>
+          <div class="rounded-lg bg-muted p-4 text-xs font-mono leading-relaxed whitespace-pre-wrap">{{ analysis.detection_logic }}</div>
         </div>
         {% endif %}
       </div>

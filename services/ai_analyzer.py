@@ -1,3 +1,4 @@
+import asyncio
 import json
 from datetime import datetime
 from typing import Optional
@@ -22,12 +23,22 @@ CVSS向量: {cvss_vector}
 受影响产品: {affected_products}
 修复建议: {remediation_steps}
 漏洞描述摘要: {description_summary}
+检测逻辑原文: {detection_logic}
 
-请用中文输出以下三项内容（JSON格式）:
+请用中文输出以下内容（JSON格式）:
 
 1. "risk_summary": 2-3句话的风险评估摘要，说明该漏洞的危害程度和紧急性
 2. "fix_priority": 修复优先级，取值为 P0（立即修复）、P1（3天内）、P2（1周内）、P3（1个月内）
 3. "remediation_guide": 简洁的操作步骤指南，面向运维团队，不超过5条
+4. "detected_components": 从"检测逻辑原文"中提取被检测到的组件列表，每个组件包含:
+   - "name": 组件/软件名称（如 "Google Chrome", "kernel", "activemq"）
+   - "version": 检测到的版本号（如 "144.0.7559.110"），没有则留空字符串
+   - "path": 文件路径、注册表路径或包名（如 "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"），没有则留空字符串
+
+提取规则:
+- 只提取实际检测到的组件，忽略检测条件描述
+- 版本号只保留数字和点，去掉 "version:" 等前缀
+- 如果原文为空或无意义，detected_components 返回空数组 []
 
 评分参考:
 - P0: CVSS>=9.0 或 被积极利用(Actively used) 或 Critical级别
@@ -59,6 +70,7 @@ def get_description_summary(raw_desc: str, max_len: int = 500) -> str:
 def _build_user_prompt(vuln: Vulnerability, analysis) -> str:
     """Build the user prompt for AI analysis."""
     desc_summary = get_description_summary(vuln.raw_description)
+    detection_logic = (analysis.detection_logic[:800] if analysis and analysis.detection_logic else "N/A")
     return RISK_ANALYSIS_PROMPT.format(
         vit_number=vuln.vit_number,
         cve_id=vuln.cve_id or "N/A",
@@ -74,6 +86,7 @@ def _build_user_prompt(vuln: Vulnerability, analysis) -> str:
         affected_products=(analysis.affected_products[:300] if analysis and analysis.affected_products else "N/A"),
         remediation_steps=(analysis.remediation_steps[:500] if analysis and analysis.remediation_steps else "N/A"),
         description_summary=desc_summary,
+        detection_logic=detection_logic,
     )
 
 
@@ -189,7 +202,7 @@ def compute_fix_priority(vuln: Vulnerability) -> str:
 
 async def analyze_vulnerabilities(db: Session, ai_settings: dict,
                                    vit_numbers: Optional[list[str]] = None) -> dict:
-    """Analyze vulnerabilities with AI. If vit_numbers is None, analyze all unanalyzed."""
+    """Analyze vulnerabilities with AI concurrently. If vit_numbers is None, analyze all unanalyzed."""
     if not ai_settings.get("ai_enabled") or not ai_settings.get("ai_api_key"):
         return {"error": "AI功能未启用或未配置API密钥", "analyzed": 0}
 
@@ -202,11 +215,18 @@ async def analyze_vulnerabilities(db: Session, ai_settings: dict,
         )
 
     vulns = query.all()
+    if not vulns:
+        return {"analyzed": 0, "errors": 0, "total": 0}
+
     analyzed = 0
     errors = 0
+    semaphore = asyncio.Semaphore(10)  # 10 concurrent requests
 
-    for vuln in vulns:
-        result = await analyze_single_vuln(vuln, ai_settings)
+    async def _analyze_one(vuln):
+        nonlocal analyzed, errors
+        async with semaphore:
+            result = await analyze_single_vuln(vuln, ai_settings)
+
         if result:
             if not vuln.analysis:
                 analysis = VulnAnalysis(vulnerability_id=vuln.id)
@@ -217,6 +237,10 @@ async def analyze_vulnerabilities(db: Session, ai_settings: dict,
             vuln.analysis.ai_risk_summary = result.get("risk_summary")
             vuln.analysis.ai_fix_priority = result.get("fix_priority")
             vuln.analysis.ai_remediation_guide = result.get("remediation_guide")
+            components = result.get("detected_components")
+            if components:
+                import json as _json
+                vuln.analysis.detected_components = _json.dumps(components, ensure_ascii=False)
             vuln.analysis.analyzed_at = datetime.utcnow()
             analyzed += 1
         else:
@@ -224,8 +248,11 @@ async def analyze_vulnerabilities(db: Session, ai_settings: dict,
                 vuln.analysis.ai_fix_priority = compute_fix_priority(vuln)
             errors += 1
 
-        if analyzed % 10 == 0:
-            db.commit()
+    # Run in batches of 50 to avoid transaction timeout
+    batch_size = 50
+    for i in range(0, len(vulns), batch_size):
+        batch = vulns[i:i + batch_size]
+        await asyncio.gather(*[_analyze_one(v) for v in batch])
+        db.commit()
 
-    db.commit()
     return {"analyzed": analyzed, "errors": errors, "total": len(vulns)}
