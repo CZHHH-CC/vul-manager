@@ -89,28 +89,31 @@ CVE编号: {cve_id}
 请直接输出JSON，不要包含其他文字。"""
 
 
-REVIEW_FIX_PLAN_PROMPT = """你是一位资深的网络安全架构师，请审查以下修复方案的正确性和安全性。
+REVIEW_FIX_PLAN_PROMPT = """你是一位资深的网络安全架构师。请审查并【直接修正】以下修复方案，使其对该主机正确、安全、可执行。
 
 CVE编号: {cve_id}
 操作系统: {os_version}
-修复方案:
+待审查的修复方案:
 {fix_plan}
 
-请从以下维度审查（JSON格式）:
+请重点检查并修正以下常见错误:
+- 漏洞所属产品与目标主机是否匹配（例如 Office 漏洞但主机是未装 Office 的服务器；某 KB 补丁不适用于该 Windows 版本）
+- 命令是否适配该操作系统、工具用法是否正确（如 Windows 的 .msu 应用 wusa 而非 msiexec；非内置 PowerShell cmdlet 需先安装模块）
+- 命令是否具体可执行、是否含危险操作
+- 验证与回滚是否可靠
 
-1. "overall_assessment": 总体评估（"通过"/"需修改"/"不通过"）
-2. "risk_level": 修复操作本身的风险等级（"低"/"中"/"高"）
-3. "issues_found": 发现的问题列表，每个问题包含:
-   - "severity": 问题严重程度（"error"/"warning"/"info"）
-   - "description": 问题描述
-   - "suggestion": 修改建议
-4. "command_safety": 命令安全性检查:
-   - "dangerous_commands": 是否包含危险命令
-   - "missing_confirmations": 需要确认的操作
-5. "improvements": 改进建议列表
-6. "approved_commands": 审查通过的安全命令列表（可直接执行）
+请直接输出【修正后的完整修复方案】（JSON格式，不要包含其他文字）:
 
-请直接输出JSON，不要包含其他文字。"""
+1. "risk_level": 修复操作本身的风险等级（"低"/"中"/"高"）
+2. "corrections": 你对原方案做出的修正列表，每条简述"原问题 → 如何改"；若原方案无需修改则返回 []
+3. "residual_risks": 仍需人工确认或注意的事项列表（如"需先确认该主机是否安装了 XX"）；无则返回 []
+4. "fix_summary": 一句话修复目标
+5. "prerequisites": 修复前准备工作（字符串）
+6. "fix_steps": 修正后的步骤列表，每步含 "step" / "action" / "command" / "expected_output"
+7. "verification": {{ "commands": [...], "success_indicators": "..." }}
+8. "rollback": 回滚方案（必须是字符串，不要用对象）
+
+要求: 命令必须具体可执行且适配上述操作系统；若发现漏洞与主机不匹配，应在 corrections 中说明并把方案改为"先确认适用性"的安全步骤。"""
 
 
 SYSTEM_PROMPT = "你是网络安全漏洞分析专家，只输出JSON格式的结果。"
@@ -468,35 +471,55 @@ async def review_fix_plan(vuln: Vulnerability, fix_plan: dict, ai_settings: dict
         return None
 
 
+async def _build_reviewed_plan(vuln: Vulnerability, ai_settings: dict):
+    """Generate a fix plan, then review-and-correct it into a single final plan.
+
+    Returns (final_plan, meta) where meta = {risk_level, corrections, residual_risks},
+    or (None, None) on failure.
+    """
+    draft = await generate_fix_plan(vuln, ai_settings)
+    if not draft:
+        return None, None
+
+    review = await review_fix_plan(vuln, draft, ai_settings)
+    if review and (review.get("fix_steps") or review.get("fix_summary")):
+        final_plan = {
+            "fix_summary": review.get("fix_summary") or draft.get("fix_summary"),
+            "prerequisites": review.get("prerequisites") or draft.get("prerequisites"),
+            "fix_steps": review.get("fix_steps") or draft.get("fix_steps"),
+            "verification": review.get("verification") or draft.get("verification"),
+            "rollback": review.get("rollback") or draft.get("rollback"),
+        }
+        meta = {
+            "reviewed": True,
+            "risk_level": review.get("risk_level"),
+            "corrections": review.get("corrections") or [],
+            "residual_risks": review.get("residual_risks") or [],
+        }
+    else:
+        # Review failed; fall back to the draft (still usable)
+        final_plan = draft
+        meta = {"reviewed": False, "risk_level": None, "corrections": [], "residual_risks": []}
+    return final_plan, meta
+
+
 async def generate_and_review_fix_plan(db: Session, vit_number: str, ai_settings: dict) -> dict:
-    """Generate fix plan and then review it."""
+    """Generate a fix plan and review-correct it into a single validated plan."""
     vuln = db.query(Vulnerability).filter(Vulnerability.vit_number == vit_number).first()
     if not vuln:
         return {"error": "漏洞不存在"}
-
     if not vuln.analysis:
         return {"error": "请先执行 AI 分析"}
 
-    # Generate fix plan
-    fix_plan = await generate_fix_plan(vuln, ai_settings)
-    if not fix_plan:
+    final_plan, meta = await _build_reviewed_plan(vuln, ai_settings)
+    if not final_plan:
         return {"error": "修复方案生成失败"}
 
-    # Save fix plan
-    vuln.analysis.ai_fix_plan = json.dumps(fix_plan, ensure_ascii=False)
-
-    # Review fix plan
-    review = await review_fix_plan(vuln, fix_plan, ai_settings)
-    if review:
-        vuln.analysis.ai_fix_plan_review = json.dumps(review, ensure_ascii=False)
-
+    vuln.analysis.ai_fix_plan = json.dumps(final_plan, ensure_ascii=False)
+    vuln.analysis.ai_fix_plan_review = json.dumps(meta, ensure_ascii=False)
     db.commit()
 
-    return {
-        "success": True,
-        "fix_plan": fix_plan,
-        "review": review,
-    }
+    return {"success": True, "fix_plan": final_plan, "review": meta}
 
 
 async def generate_fix_plans_bulk(db: Session, ai_settings: dict,
@@ -522,15 +545,13 @@ async def generate_fix_plans_bulk(db: Session, ai_settings: dict,
     async def _one(vuln):
         nonlocal generated, errors
         async with semaphore:
-            fix_plan = await generate_fix_plan(vuln, ai_settings)
-            if not fix_plan:
-                errors += 1
-                return
-            vuln.analysis.ai_fix_plan = json.dumps(fix_plan, ensure_ascii=False)
-            review = await review_fix_plan(vuln, fix_plan, ai_settings)
-            if review:
-                vuln.analysis.ai_fix_plan_review = json.dumps(review, ensure_ascii=False)
-            generated += 1
+            final_plan, meta = await _build_reviewed_plan(vuln, ai_settings)
+        if not final_plan:
+            errors += 1
+            return
+        vuln.analysis.ai_fix_plan = json.dumps(final_plan, ensure_ascii=False)
+        vuln.analysis.ai_fix_plan_review = json.dumps(meta, ensure_ascii=False)
+        generated += 1
 
     batch_size = 30
     for i in range(0, len(candidates), batch_size):
