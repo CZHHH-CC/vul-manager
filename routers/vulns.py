@@ -111,14 +111,24 @@ async def vuln_detail_page(
         return templates.TemplateResponse("404.html", {"request": request}, status_code=404)
 
     history = get_vuln_history(db, vit_number)
-    detection_steps = parse_detection_logic(vuln.analysis.detection_logic) if vuln.analysis else []
+
+    # Try AI-extracted components first, fall back to regex parser
+    detected_components = []
+    if vuln.analysis and vuln.analysis.detected_components:
+        try:
+            import json
+            detected_components = json.loads(vuln.analysis.detected_components)
+        except (json.JSONDecodeError, TypeError):
+            pass
+    if not detected_components and vuln.analysis:
+        detected_components = parse_detection_logic(vuln.analysis.detection_logic)
 
     return templates.TemplateResponse("vuln_detail.html", {
         "request": request,
         "vuln": vuln,
         "analysis": vuln.analysis,
         "history": history,
-        "detection_steps": detection_steps,
+        "detected_components": detected_components,
     })
 
 

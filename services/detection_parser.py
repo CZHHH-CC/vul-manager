@@ -17,69 +17,80 @@ def parse_detection_logic(text: str | None) -> list[dict]:
     # Remove metadata after 🔎
     text = re.split(r"🔎", text)[0].strip()
 
+    # Normalize: split concatenated keywords so regex can match
+    text = re.sub(r"(inventory)(Evidence)", r"\1 \2", text)
+    text = re.sub(r"(vulnerability)(Evidence)", r"\1 \2", text)
+    text = re.sub(r"(Evidence)(file_item|registry_item)", r"\1 \2", text)
+    text = re.sub(r"(registry_item)([A-Z])", r"\1 \2", text)
+    text = re.sub(r"(\d+\.?\d*)(vulnerability|Evidence|Checks|Required|Found)", r"\1 \2", text)
+    text = re.sub(r"(filepath:\s*[^\s])(Evidence|✓|▶)", r"\1 \2", text)
+
+    # Split by ▶ to process each check step separately
+    chunks = re.split(r"▶\s*", text)
+
     items = []
     seen = set()
 
-    # Extract from "Found on asset" section: "name:: arch: xxx, evr: version"
-    for m in re.finditer(r"•\s*([\w\-\.]+)::\s*arch:\s*[\w_]+,\s*evr:\s*([\d:\.\-\w]+)", text):
-        name, version = m.group(1), m.group(2)
-        # Clean version: remove epoch prefix like "0:"
+    def _add(name="", version="", path=""):
+        name = name.strip().strip("the ")
+        version = version.strip()
+        path = path.strip()
         version = re.sub(r"^\d+:", "", version)
-        key = f"{name}@{version}"
-        if key not in seen:
+        key = f"{name}|{version}|{path}"
+        if key not in seen and (name or version or path):
             seen.add(key)
-            items.append({"name": name, "version": version, "path": ""})
+            items.append({"name": name, "version": version, "path": path})
 
-    # Extract from "Found on asset" section: "value: [version]"
-    for m in re.finditer(r"•\s*value:\s*\[([^\]]*)\]", text):
-        val = m.group(1).strip()
-        if val and val not in seen:
-            seen.add(val)
-            items.append({"name": "", "version": val, "path": ""})
+    for chunk in chunks:
+        chunk = chunk.strip()
+        if not chunk:
+            continue
 
-    # Extract from "Evidence" section: "package: name-version.arch.ext"
-    for m in re.finditer(r"•\s*package:\s*(.+?)(?=•|$)", text):
-        pkg = m.group(1).strip()
-        if pkg and pkg not in seen:
-            seen.add(pkg)
-            # Try to split package name and version
-            name, version = _split_package_version(pkg)
-            items.append({"name": name, "version": version, "path": pkg})
+        # filepath
+        for m in re.finditer(r"filepath:\s*(.+?)(?=✓|▶|$)", chunk):
+            _add(path=m.group(1).strip())
 
-    # Extract from "Evidence" section: "filepath: /path/to/file"
-    for m in re.finditer(r"•\s*filepath:\s*(.+?)(?=•|$)", text):
-        path = m.group(1).strip()
-        if path and path not in seen:
-            seen.add(path)
-            items.append({"name": "", "version": "", "path": path})
+        # version: X.X.X (stop at keywords)
+        for m in re.finditer(r"version:\s*([\d][\d\.\-\w]*?)(?:\s*(?:Evidence|Checks|Required|Found|✓|▶)|$)", chunk):
+            _add(version=m.group(1))
 
-    # Extract from "Evidence" section: "registry_item: KEY\PATH"
-    for m in re.finditer(r"•\s*registry_item?\s*(?:KEY)?\s*:?\s*(.+?)(?=•|$)", text, re.IGNORECASE):
-        reg = m.group(1).strip()
-        if reg and reg not in seen and len(reg) > 3:
-            seen.add(reg)
-            items.append({"name": "", "version": "", "path": reg})
+        # package: xxx
+        for m in re.finditer(r"package:\s*(.+?)(?=✓|▶|$)", chunk):
+            pkg = m.group(1).strip()
+            if pkg:
+                name, version = _split_package_version(pkg)
+                _add(name=name, version=version, path=pkg)
 
-    # Extract version from title: "Check if version of X is less than Y"
-    title_ver = re.search(r"version of\s+([\w\-\.]+)\s+is\s+(?:less than|greater than)\s+([\d:\.\-\w]+)", text)
-    if title_ver:
-        target_name = title_ver.group(1)
-        target_ver = re.sub(r"^\d+:", "", title_ver.group(2))
-        # Add as meta item if not already captured
-        if not any(i["name"] == target_name for i in items):
-            items.insert(0, {"name": target_name, "version": target_ver, "path": "", "is_target": True})
+        # registry_item KEY\PATH
+        for m in re.finditer(r"registry_item\s+([A-Z_]+\\[^\s✓▶]+)", chunk):
+            reg = m.group(1).strip()
+            if len(reg) > 3:
+                _add(path=reg)
 
-    # Extract existence: "Check if X is installed" + "Item was found"
-    if "Item was found" in text:
-        exist_match = re.search(r"Check if\s+(.+?)\s+is\s+installed", text)
-        if exist_match:
-            name = exist_match.group(1).strip()
-            # Clean up name: remove parenthetical details
-            name = re.sub(r"\s*\(.*?\)\s*", "", name).strip()
-            if name and not any(i["name"] == name for i in items):
-                items.append({"name": name, "version": "", "path": ""})
+        # name:: arch: xxx, evr: version
+        for m in re.finditer(r"([\w\-\.]+)::\s*arch:\s*[\w_]+,\s*evr:\s*([\d:\.\-\w]+)", chunk):
+            _add(name=m.group(1), version=m.group(2))
 
-    return items
+        # value: [version]
+        for m in re.finditer(r"value:\s*\[([^\]]*)\]", chunk):
+            _add(version=m.group(1))
+
+        # "version of X is less than Y"
+        ver_match = re.search(r"version of\s+(.+?)\s+is\s+(?:less than|greater than)\s+([\d:\.\-\w]+?)(?:\s*(?:Evidence|Checks|Required|Found|✓|▶)|$)", chunk)
+        if ver_match:
+            _add(name=ver_match.group(1).strip(), version=ver_match.group(2))
+
+        # "Check if X is installed" + found
+        if "Item was found" in chunk or "✓ true" in chunk:
+            inst_match = re.search(r"Check if\s+(?:the\s+)?(.+?)\s+is\s+installed", chunk)
+            if inst_match:
+                name = inst_match.group(1).strip()
+                name = re.sub(r"\s*\(.*?\)\s*", "", name)
+                if name and len(name) > 2 and not any(i["name"] == name for i in items):
+                    _add(name=name)
+
+    # Post-process: deduplicate by name, keep entries with most info
+    return _dedupe_items(items)
 
 
 def _split_package_version(pkg: str) -> tuple[str, str]:
@@ -89,3 +100,37 @@ def _split_package_version(pkg: str) -> tuple[str, str]:
     if m:
         return m.group(1), m.group(2)
     return pkg, ""
+
+
+def _dedupe_items(items: list[dict]) -> list[dict]:
+    """Remove duplicate items, keeping the one with most information."""
+    # Filter out noise names
+    noise = {"source linux-signed", "source linux", "source linux-lowlatency"}
+    items = [i for i in items if i["name"].lower() not in noise]
+
+    # Group named items: if one name is a prefix of another, keep the longer one
+    named = [i for i in items if i["name"]]
+    path_only = [i for i in items if not i["name"]]
+
+    # Sort by name length descending so longer names come first
+    named.sort(key=lambda x: len(x["name"]), reverse=True)
+
+    kept = []
+    for item in named:
+        # Check if this name is already covered by a longer name
+        norm = re.sub(r"[\s\-_]+", "", item["name"].lower())
+        already_covered = False
+        for existing in kept:
+            existing_norm = re.sub(r"[\s\-_]+", "", existing["name"].lower())
+            if norm in existing_norm or existing_norm in norm:
+                # Keep the one with more info
+                if (bool(item["version"]) > bool(existing["version"]) or
+                    (bool(item["version"]) == bool(existing["version"]) and bool(item["path"]) > bool(existing["path"]))):
+                    kept.remove(existing)
+                else:
+                    already_covered = True
+                break
+        if not already_covered:
+            kept.append(item)
+
+    return kept + path_only
