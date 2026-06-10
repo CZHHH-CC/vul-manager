@@ -35,6 +35,8 @@ CVSS向量: {cvss_vector}
    - "version": 检测到的版本号（如 "144.0.7559.110"），没有则留空字符串
    - "path": 文件路径、注册表路径或包名（如 "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"），没有则留空字符串
 
+5. "os_version": 从漏洞描述和检测逻辑中提取操作系统版本信息（如 "Ubuntu 22.04", "Windows Server 2019", "RHEL 9.2"），无法确定则留空字符串
+
 提取规则:
 - 只提取实际检测到的组件，忽略检测条件描述
 - 版本号只保留数字和点，去掉 "version:" 等前缀
@@ -45,6 +47,63 @@ CVSS向量: {cvss_vector}
 - P1: CVSS>=7.0 或 有公开PoC(weaponized, poc) 或 High级别
 - P2: CVSS>=4.0 或 Medium级别
 - P3: 其他
+
+请直接输出JSON，不要包含其他文字。"""
+
+
+FIX_PLAN_PROMPT = """你是一位资深的网络安全运维专家。请根据以下漏洞信息，生成详细的修复方案。
+
+CVE编号: {cve_id}
+操作系统: {os_version}
+服务器类型: {server_class}
+检测到的组件: {detected_components}
+漏洞描述摘要: {description_summary}
+现有修复建议: {remediation_steps}
+
+请用中文输出详细的修复方案（JSON格式）:
+
+1. "fix_summary": 一句话说明修复目标
+2. "prerequisites": 修复前的准备工作（如备份、维护窗口等）
+3. "fix_steps": 详细的修复步骤列表，每步包含:
+   - "step": 步骤编号
+   - "action": 操作说明
+   - "command": 具体的修复命令（根据操作系统类型给出对应命令，如 apt/yum/winget/chrome 更新命令等）
+   - "expected_output": 命令执行后的预期输出
+4. "verification": 修复验证步骤，包含:
+   - "commands": 验证命令列表
+   - "expected_results": 验证通过的预期结果
+   - "success_indicators": 判断修复成功的具体指标
+5. "rollback": 回滚方案（如果修复失败如何恢复）
+
+要求:
+- 命令必须具体可执行，不要用占位符
+- 根据操作系统类型给出对应的包管理器命令
+- 如果是软件组件漏洞，给出升级到安全版本的具体命令
+- 验证步骤必须明确可判断
+
+请直接输出JSON，不要包含其他文字。"""
+
+
+REVIEW_FIX_PLAN_PROMPT = """你是一位资深的网络安全架构师，请审查以下修复方案的正确性和安全性。
+
+CVE编号: {cve_id}
+操作系统: {os_version}
+修复方案:
+{fix_plan}
+
+请从以下维度审查（JSON格式）:
+
+1. "overall_assessment": 总体评估（"通过"/"需修改"/"不通过"）
+2. "risk_level": 修复操作本身的风险等级（"低"/"中"/"高"）
+3. "issues_found": 发现的问题列表，每个问题包含:
+   - "severity": 问题严重程度（"error"/"warning"/"info"）
+   - "description": 问题描述
+   - "suggestion": 修改建议
+4. "command_safety": 命令安全性检查:
+   - "dangerous_commands": 是否包含危险命令
+   - "missing_confirmations": 需要确认的操作
+5. "improvements": 改进建议列表
+6. "approved_commands": 审查通过的安全命令列表（可直接执行）
 
 请直接输出JSON，不要包含其他文字。"""
 
@@ -241,6 +300,10 @@ async def analyze_vulnerabilities(db: Session, ai_settings: dict,
             if components:
                 import json as _json
                 vuln.analysis.detected_components = _json.dumps(components, ensure_ascii=False)
+            # Save OS version
+            os_ver = result.get("os_version")
+            if os_ver:
+                vuln.analysis.os_version = os_ver
             vuln.analysis.analyzed_at = datetime.utcnow()
             analyzed += 1
         else:
@@ -256,3 +319,111 @@ async def analyze_vulnerabilities(db: Session, ai_settings: dict,
         db.commit()
 
     return {"analyzed": analyzed, "errors": errors, "total": len(vulns)}
+
+
+async def generate_fix_plan(vuln: Vulnerability, ai_settings: dict) -> Optional[dict]:
+    """Generate a detailed fix plan with commands and verification steps."""
+    if not ai_settings.get("ai_enabled") or not ai_settings.get("ai_api_key"):
+        return None
+
+    analysis = vuln.analysis
+    detected_components = "N/A"
+    if analysis and analysis.detected_components:
+        detected_components = analysis.detected_components
+
+    os_version = "N/A"
+    if analysis and analysis.os_version:
+        os_version = analysis.os_version
+
+    desc_summary = get_description_summary(vuln.raw_description)
+
+    user_prompt = FIX_PLAN_PROMPT.format(
+        cve_id=vuln.cve_id or "N/A",
+        os_version=os_version,
+        server_class=vuln.server_class or "N/A",
+        detected_components=detected_components,
+        description_summary=desc_summary,
+        remediation_steps=(analysis.remediation_steps[:500] if analysis and analysis.remediation_steps else "N/A"),
+    )
+
+    try:
+        async with httpx.AsyncClient(timeout=90.0) as client:
+            if ai_settings.get("ai_provider") == "anthropic":
+                content = await _call_anthropic(client, user_prompt,
+                    ai_settings.get("ai_base_url", ""), ai_settings["ai_api_key"],
+                    ai_settings.get("ai_model", ""))
+            else:
+                content = await _call_openai_compatible(client, user_prompt,
+                    ai_settings.get("ai_base_url", ""), ai_settings["ai_api_key"],
+                    ai_settings.get("ai_model", ""))
+
+            if content:
+                return _parse_ai_response(content)
+        return None
+    except Exception as e:
+        print(f"Fix plan generation failed for {vuln.vit_number}: {e}")
+        return None
+
+
+async def review_fix_plan(vuln: Vulnerability, fix_plan: dict, ai_settings: dict) -> Optional[dict]:
+    """AI review of the generated fix plan."""
+    if not ai_settings.get("ai_enabled") or not ai_settings.get("ai_api_key"):
+        return None
+
+    analysis = vuln.analysis
+    os_version = analysis.os_version if analysis else "N/A"
+
+    user_prompt = REVIEW_FIX_PLAN_PROMPT.format(
+        cve_id=vuln.cve_id or "N/A",
+        os_version=os_version,
+        fix_plan=json.dumps(fix_plan, ensure_ascii=False, indent=2),
+    )
+
+    try:
+        async with httpx.AsyncClient(timeout=90.0) as client:
+            if ai_settings.get("ai_provider") == "anthropic":
+                content = await _call_anthropic(client, user_prompt,
+                    ai_settings.get("ai_base_url", ""), ai_settings["ai_api_key"],
+                    ai_settings.get("ai_model", ""))
+            else:
+                content = await _call_openai_compatible(client, user_prompt,
+                    ai_settings.get("ai_base_url", ""), ai_settings["ai_api_key"],
+                    ai_settings.get("ai_model", ""))
+
+            if content:
+                return _parse_ai_response(content)
+        return None
+    except Exception as e:
+        print(f"Fix plan review failed for {vuln.vit_number}: {e}")
+        return None
+
+
+async def generate_and_review_fix_plan(db: Session, vit_number: str, ai_settings: dict) -> dict:
+    """Generate fix plan and then review it."""
+    vuln = db.query(Vulnerability).filter(Vulnerability.vit_number == vit_number).first()
+    if not vuln:
+        return {"error": "漏洞不存在"}
+
+    if not vuln.analysis:
+        return {"error": "请先执行 AI 分析"}
+
+    # Generate fix plan
+    fix_plan = await generate_fix_plan(vuln, ai_settings)
+    if not fix_plan:
+        return {"error": "修复方案生成失败"}
+
+    # Save fix plan
+    vuln.analysis.ai_fix_plan = json.dumps(fix_plan, ensure_ascii=False)
+
+    # Review fix plan
+    review = await review_fix_plan(vuln, fix_plan, ai_settings)
+    if review:
+        vuln.analysis.ai_fix_plan_review = json.dumps(review, ensure_ascii=False)
+
+    db.commit()
+
+    return {
+        "success": True,
+        "fix_plan": fix_plan,
+        "review": review,
+    }

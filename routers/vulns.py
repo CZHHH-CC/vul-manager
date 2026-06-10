@@ -11,7 +11,7 @@ from services.vul_service import (
     get_vuln_history, get_filter_options, get_overdue_vulns,
     delete_vulns_by_numbers,
 )
-from services.ai_analyzer import analyze_vulnerabilities
+from services.ai_analyzer import analyze_vulnerabilities, generate_and_review_fix_plan
 from services.cve_lookup import enrich_cvss_scores
 from services.detection_parser import parse_detection_logic
 from routers.settings import get_ai_settings
@@ -179,6 +179,17 @@ async def trigger_analysis(
     """API: Trigger AI analysis."""
     ai_settings = get_ai_settings(db)
     result = await analyze_vulnerabilities(db, ai_settings, vit_numbers)
+    return result
+
+
+@router.post("/api/vulns/{vit_number}/fix-plan")
+async def create_fix_plan(
+    vit_number: str,
+    db: Session = Depends(get_db),
+):
+    """API: Generate and review fix plan for a vulnerability."""
+    ai_settings = get_ai_settings(db)
+    result = await generate_and_review_fix_plan(db, vit_number, ai_settings)
     return result
 
 

@@ -57,6 +57,9 @@ class VulnAnalysis(Base):
     ai_fix_priority = Column(String(32))
     ai_remediation_guide = Column(Text)
     detected_components = Column(Text)  # JSON array of {name, version, path}
+    os_version = Column(String(128))  # e.g. "Ubuntu 22.04", "Windows Server 2019"
+    ai_fix_plan = Column(Text)  # Detailed fix plan with commands
+    ai_fix_plan_review = Column(Text)  # AI review of the fix plan
     analyzed_at = Column(DateTime)
 
     vulnerability = relationship("Vulnerability", back_populates="analysis")

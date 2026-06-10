@@ -58,7 +58,7 @@
             ('创建时间', vuln.opened_at.strftime('%Y-%m-%d %H:%M') if vuln.opened_at else 'N/A', false),
             ('IP 地址', vuln.ip_address or 'N/A', false),
             ('更新时间', vuln.updated_at.strftime('%Y-%m-%d %H:%M') if vuln.updated_at else 'N/A', false),
-            ('服务器类型', vuln.server_class, false),
+            ('服务器类型', (vuln.server_class or 'N/A') + (', ' + analysis.os_version if analysis and analysis.os_version else ''), false),
             ('导入时间', vuln.last_import_at.strftime('%Y-%m-%d %H:%M') if vuln.last_import_at else 'N/A', false),
           ] %}
           {% for label, val, mono in rows %}
@@ -186,6 +186,35 @@
       </div>
     </div>
     {% endif %}
+
+    <!-- Fix Plan -->
+    {% if analysis and analysis.ai_fix_plan %}
+    <div class="card fade-in">
+      <div class="card-hd">
+        <span class="card-title flex items-center gap-2">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+          修复方案
+        </span>
+      </div>
+      <div class="card-body space-y-4" id="fixPlanContent">
+        <!-- Rendered by JS -->
+      </div>
+    </div>
+    {% endif %}
+
+    {% if analysis and analysis.ai_fix_plan_review %}
+    <div class="card fade-in">
+      <div class="card-hd">
+        <span class="card-title flex items-center gap-2">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+          方案审查
+        </span>
+      </div>
+      <div class="card-body space-y-4" id="fixPlanReview">
+        <!-- Rendered by JS -->
+      </div>
+    </div>
+    {% endif %}
   </div>
 
   <!-- Sidebar -->
@@ -196,6 +225,10 @@
         <button class="btn btn-outline btn-sm w-full justify-start" onclick="triggerSingleAnalysis()">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
           AI 重新分析
+        </button>
+        <button class="btn btn-outline btn-sm w-full justify-start" onclick="generateFixPlan()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+          生成修复方案
         </button>
         <a href="https://nvd.nist.gov/vuln/detail/{{ vuln.cve_id }}" target="_blank" class="btn btn-outline btn-sm w-full justify-start">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
@@ -239,5 +272,77 @@
 <script>
 function updateState(s){ fetch(`/api/vulns/{{ vuln.vit_number }}?state=${s}`,{method:'PATCH'}).then(r=>r.json()).then(d=>{ if(d.success)location.reload(); else alert('更新失败: '+(d.error||'未知错误')); }); }
 function triggerSingleAnalysis(){ const b=event.currentTarget; b.disabled=true; b.textContent='分析中…'; fetch('/api/vulns/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(['{{ vuln.vit_number }}'])}).then(r=>r.json()).then(()=>{ alert('分析完成'); location.reload(); }).catch(e=>{ alert('分析失败: '+e); b.disabled=false; b.textContent='AI 重新分析'; }); }
+
+function generateFixPlan(){
+  const b=event.currentTarget; b.disabled=true; b.textContent='生成中…';
+  fetch('/api/vulns/{{ vuln.vit_number }}/fix-plan',{method:'POST'})
+    .then(r=>r.json()).then(d=>{
+      if(d.success){ alert('修复方案已生成'); location.reload(); }
+      else alert('生成失败: '+(d.error||'未知错误'));
+      b.disabled=false; b.textContent='生成修复方案';
+    }).catch(e=>{ alert('请求失败: '+e); b.disabled=false; b.textContent='生成修复方案'; });
+}
+
+// Render fix plan
+(function(){
+  const planEl=document.getElementById('fixPlanContent');
+  const reviewEl=document.getElementById('fixPlanReview');
+  if(!planEl&&!reviewEl) return;
+
+  {% if analysis and analysis.ai_fix_plan %}
+  try{
+    const plan={{ analysis.ai_fix_plan | safe }};
+    let html='';
+    if(plan.fix_summary) html+=`<div class="rounded-lg bg-muted p-3 text-sm">${plan.fix_summary}</div>`;
+    if(plan.prerequisites) html+=`<div><p class="text-xs font-semibold text-muted-foreground mb-1">准备工作</p><div class="text-sm text-muted-foreground">${plan.prerequisites}</div></div>`;
+    if(plan.fix_steps&&plan.fix_steps.length){
+      html+=`<div><p class="text-xs font-semibold text-muted-foreground mb-2">修复步骤</p><div class="space-y-2">`;
+      plan.fix_steps.forEach(s=>{
+        html+=`<div class="rounded-lg border border-border p-3">
+          <p class="text-sm font-medium mb-1">步骤 ${s.step}: ${s.action}</p>
+          ${s.command?`<pre class="text-xs bg-gray-900 text-gray-100 rounded p-2 mt-1 overflow-x-auto">${s.command}</pre>`:''}
+          ${s.expected_output?`<p class="text-xs text-muted-foreground mt-1">预期: ${s.expected_output}</p>`:''}
+        </div>`;
+      });
+      html+=`</div></div>`;
+    }
+    if(plan.verification){
+      html+=`<div><p class="text-xs font-semibold text-muted-foreground mb-1">验证步骤</p>`;
+      if(plan.verification.commands){
+        html+=`<div class="space-y-1">`;
+        plan.verification.commands.forEach(c=>{ html+=`<pre class="text-xs bg-gray-900 text-gray-100 rounded p-2 overflow-x-auto">${c}</pre>`; });
+        html+=`</div>`;
+      }
+      if(plan.verification.success_indicators) html+=`<p class="text-xs text-emerald-600 mt-1">✓ ${plan.verification.success_indicators}</p>`;
+      html+=`</div>`;
+    }
+    if(plan.rollback) html+=`<div><p class="text-xs font-semibold text-muted-foreground mb-1">回滚方案</p><div class="text-sm text-muted-foreground">${plan.rollback}</div></div>`;
+    planEl.innerHTML=html;
+  }catch(e){ planEl.innerHTML='<p class="text-sm text-red-500">解析失败</p>'; }
+  {% endif %}
+
+  {% if analysis and analysis.ai_fix_plan_review %}
+  try{
+    const review={{ analysis.ai_fix_plan_review | safe }};
+    let html='';
+    const colors={'通过':'text-emerald-600','需修改':'text-amber-600','不通过':'text-red-600'};
+    if(review.overall_assessment) html+=`<div class="flex items-center gap-2"><span class="text-lg font-bold ${colors[review.overall_assessment]||''}">${review.overall_assessment}</span><span class="badge badge-secondary">风险: ${review.risk_level||'N/A'}</span></div>`;
+    if(review.issues_found&&review.issues_found.length){
+      html+=`<div><p class="text-xs font-semibold text-muted-foreground mb-1">发现的问题</p><div class="space-y-1">`;
+      review.issues_found.forEach(i=>{
+        const icon=i.severity==='error'?'🔴':i.severity==='warning'?'🟡':'🔵';
+        html+=`<div class="text-sm">${icon} ${i.description}${i.suggestion?` → ${i.suggestion}`:''}</div>`;
+      });
+      html+=`</div></div>`;
+    }
+    if(review.improvements&&review.improvements.length){
+      html+=`<div><p class="text-xs font-semibold text-muted-foreground mb-1">改进建议</p><ul class="list-disc list-inside text-sm space-y-0.5">`;
+      review.improvements.forEach(i=>{ html+=`<li>${i}</li>`; });
+      html+=`</ul></div>`;
+    }
+    reviewEl.innerHTML=html;
+  }catch(e){ reviewEl.innerHTML='<p class="text-sm text-red-500">解析失败</p>'; }
+  {% endif %}
+})();
 </script>
 {% endblock %}
