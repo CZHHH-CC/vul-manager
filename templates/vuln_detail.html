@@ -179,8 +179,9 @@
         </div>
         {% if analysis.ai_remediation_guide %}
         <div>
-          <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">操作指南</p>
+          <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">操作指南 <span class="font-normal normal-case text-muted-foreground">· 处置决策摘要</span></p>
           <div class="rounded-lg bg-muted p-4 text-sm leading-relaxed">{{ analysis.ai_remediation_guide }}</div>
+          <p class="text-xs text-muted-foreground mt-1.5">💡 具体可执行的升级命令、验证与回滚见下方「修复方案」。</p>
         </div>
         {% endif %}
       </div>
