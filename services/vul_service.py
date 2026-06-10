@@ -133,6 +133,7 @@ def get_vuln_list(
     state: Optional[str] = None,
     cve_id: Optional[str] = None,
     hostname: Optional[str] = None,
+    server_class: Optional[str] = None,
     assignment_group: Optional[str] = None,
     search: Optional[str] = None,
     sort_by: str = "severity_level",
@@ -152,6 +153,8 @@ def get_vuln_list(
         query = query.filter(Vulnerability.cve_id.ilike(f"%{cve_id}%"))
     if hostname:
         query = query.filter(Vulnerability.hostname.ilike(f"%{hostname}%"))
+    if server_class:
+        query = query.filter(Vulnerability.server_class == server_class)
     if assignment_group:
         query = query.filter(Vulnerability.assignment_group.ilike(f"%{assignment_group}%"))
     if search:
