@@ -201,7 +201,7 @@ def compute_fix_priority(vuln: Vulnerability) -> str:
 
 async def analyze_vulnerabilities(db: Session, ai_settings: dict,
                                    vit_numbers: Optional[list[str]] = None) -> dict:
-    """Analyze vulnerabilities with AI. If vit_numbers is None, analyze all unanalyzed."""
+    """Analyze vulnerabilities with AI concurrently. If vit_numbers is None, analyze all unanalyzed."""
     if not ai_settings.get("ai_enabled") or not ai_settings.get("ai_api_key"):
         return {"error": "AI功能未启用或未配置API密钥", "analyzed": 0}
 
@@ -214,11 +214,18 @@ async def analyze_vulnerabilities(db: Session, ai_settings: dict,
         )
 
     vulns = query.all()
+    if not vulns:
+        return {"analyzed": 0, "errors": 0, "total": 0}
+
     analyzed = 0
     errors = 0
+    semaphore = asyncio.Semaphore(10)  # 10 concurrent requests
 
-    for vuln in vulns:
-        result = await analyze_single_vuln(vuln, ai_settings)
+    async def _analyze_one(vuln):
+        nonlocal analyzed, errors
+        async with semaphore:
+            result = await analyze_single_vuln(vuln, ai_settings)
+
         if result:
             if not vuln.analysis:
                 analysis = VulnAnalysis(vulnerability_id=vuln.id)
@@ -229,7 +236,6 @@ async def analyze_vulnerabilities(db: Session, ai_settings: dict,
             vuln.analysis.ai_risk_summary = result.get("risk_summary")
             vuln.analysis.ai_fix_priority = result.get("fix_priority")
             vuln.analysis.ai_remediation_guide = result.get("remediation_guide")
-            # Save detected components as JSON
             components = result.get("detected_components")
             if components:
                 import json as _json
@@ -241,8 +247,11 @@ async def analyze_vulnerabilities(db: Session, ai_settings: dict,
                 vuln.analysis.ai_fix_priority = compute_fix_priority(vuln)
             errors += 1
 
-        if analyzed % 10 == 0:
-            db.commit()
+    # Run in batches of 50 to avoid transaction timeout
+    batch_size = 50
+    for i in range(0, len(vulns), batch_size):
+        batch = vulns[i:i + batch_size]
+        await asyncio.gather(*[_analyze_one(v) for v in batch])
+        db.commit()
 
-    db.commit()
     return {"analyzed": analyzed, "errors": errors, "total": len(vulns)}
