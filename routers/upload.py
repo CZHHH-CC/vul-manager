@@ -65,7 +65,7 @@ async def upload_excel(
         # Trigger AI analysis in background if requested
         if auto_analyze.lower() == "true":
             ai_settings = get_ai_settings(db)
-            if ai_settings.get("enabled") and ai_settings.get("api_key"):
+            if ai_settings.get("ai_enabled") and ai_settings.get("ai_api_key"):
                 background_tasks.add_task(_run_ai_analysis)
                 response["ai_triggered"] = True
             else:

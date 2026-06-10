@@ -109,7 +109,7 @@
             <th class="tbl-th w-10"><input type="checkbox" id="selectAll" onchange="toggleSelectAll(this)" class="rounded border-border"></th>
             <th class="tbl-th">VIT 编号</th><th class="tbl-th">CVE 编号</th><th class="tbl-th">主机名</th>
             <th class="tbl-th">类型</th><th class="tbl-th">严重程度</th><th class="tbl-th">CVSS</th>
-            <th class="tbl-th">状态</th><th class="tbl-th">优先级</th><th class="tbl-th">创建时间</th><th class="tbl-th text-right pr-4">操作</th>
+            <th class="tbl-th">状态</th><th class="tbl-th">优先级</th><th class="tbl-th">AI 分析</th><th class="tbl-th">创建时间</th><th class="tbl-th text-right pr-4">操作</th>
           </tr></thead>
           <tbody>
             {% for vuln in vulns %}
@@ -146,6 +146,15 @@
                   {% elif p == 'P2' %}<span class="badge badge-amber">P2</span>
                   {% else %}<span class="badge badge-secondary">P3</span>{% endif %}
                 {% else %}<span class="text-muted-foreground">—</span>{% endif %}
+              </td>
+              <td class="tbl-td">
+                {% if vuln.analysis and vuln.analysis.ai_risk_summary %}
+                  <span class="badge badge-emerald text-xs">已分析</span>
+                {% elif vuln.analysis and vuln.analysis.ai_fix_priority %}
+                  <span class="badge badge-blue text-xs">规则优先级</span>
+                {% else %}
+                  <span class="text-muted-foreground text-xs">待分析</span>
+                {% endif %}
               </td>
               <td class="tbl-td text-xs text-muted-foreground">{{ vuln.opened_at.strftime('%Y-%m-%d') if vuln.opened_at else '—' }}</td>
               <td class="tbl-td">
