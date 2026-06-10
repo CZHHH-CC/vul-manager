@@ -10,6 +10,12 @@
     <p class="hero-sub">共 {{ total }} 条漏洞工单</p>
   </div>
   <div class="flex items-center gap-2">
+    <button class="btn btn-outline btn-sm" onclick="enrichCvss()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>
+      </svg>
+      补全 CVSS
+    </button>
     <button class="btn btn-outline btn-sm" onclick="triggerAnalysis()">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>
@@ -226,6 +232,7 @@ function submitSearch(){ document.getElementById('searchHidden').value = documen
 function showToast(type,msg){ const t=document.getElementById('toast'),c=document.getElementById('toastContent'); c.className='alert shadow-sm min-w-[260px] alert-'+type; c.textContent=msg; t.classList.remove('hidden'); setTimeout(()=>t.classList.add('hidden'),4000); }
 function updateState(v,s){ if(!confirm(`确定将 ${v} 标记为 ${s}？`))return; fetch(`/api/vulns/${v}?state=${s}`,{method:'PATCH'}).then(r=>r.json()).then(d=>{ if(d.success)location.reload(); else showToast('error','更新失败: '+(d.error||'未知错误')); }); }
 function triggerAnalysis(){ if(!confirm('将对所有未分析的漏洞执行 AI 分析，可能需要几分钟。继续？'))return; const b=event.currentTarget; b.disabled=true; b.textContent='分析中…'; fetch('/api/vulns/analyze',{method:'POST'}).then(r=>r.json()).then(d=>{ showToast('ok',`分析完成：成功 ${d.analyzed||0} 条，失败 ${d.errors||0} 条`); setTimeout(()=>location.reload(),1500); }).catch(e=>{ showToast('error','分析请求失败: '+e); b.disabled=false; b.textContent='AI 分析'; }); }
+function enrichCvss(){ if(!confirm('将从 NVD 在线补全所有缺失的 CVSS 评分。继续？'))return; const b=event.currentTarget; b.disabled=true; const t=b.textContent; b.textContent='提交中…'; fetch('/api/vulns/enrich-cvss',{method:'POST'}).then(r=>r.json()).then(d=>{ showToast(d.pending>0?'info':'ok', d.message||'已提交'); b.disabled=false; b.textContent=t; }).catch(e=>{ showToast('error','补全请求失败: '+e); b.disabled=false; b.textContent=t; }); }
 function changePageSize(size){ const p=new URLSearchParams(window.location.search); p.set('page_size',size); p.set('page','1'); window.location.search=p.toString(); }
 
 // Batch selection

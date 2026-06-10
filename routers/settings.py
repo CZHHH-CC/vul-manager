@@ -18,6 +18,7 @@ AI_DEFAULTS = {
     "ai_api_key": {"value": "", "description": "API密钥"},
     "ai_base_url": {"value": "https://api.openai.com/v1", "description": "API地址 (自定义时使用)"},
     "ai_model": {"value": "gpt-4o-mini", "description": "模型名称"},
+    "nvd_api_key": {"value": "", "description": "NVD API Key (用于补全 CVSS 评分，可选)"},
 }
 
 
@@ -48,6 +49,7 @@ def get_ai_settings(db: Session) -> dict:
         "ai_api_key": get_setting(db, "ai_api_key"),
         "ai_base_url": get_setting(db, "ai_base_url"),
         "ai_model": get_setting(db, "ai_model"),
+        "nvd_api_key": get_setting(db, "nvd_api_key"),
     }
 
 
@@ -62,6 +64,7 @@ class AISettingsUpdate(BaseModel):
     ai_api_key: Optional[str] = ""
     ai_base_url: Optional[str] = ""
     ai_model: Optional[str] = ""
+    nvd_api_key: Optional[str] = ""
 
 
 # Provider presets for frontend
@@ -102,6 +105,7 @@ async def update_ai_settings(settings: AISettingsUpdate, db: Session = Depends(g
         "ai_api_key": settings.ai_api_key or "",
         "ai_base_url": settings.ai_base_url or "",
         "ai_model": settings.ai_model or "",
+        "nvd_api_key": settings.nvd_api_key or "",
     }
 
     for key, value in updates.items():

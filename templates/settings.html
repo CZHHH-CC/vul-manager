@@ -75,6 +75,28 @@
     </div>
   </div>
 
+  <!-- NVD / CVSS enrichment -->
+  <div class="card fade-in">
+    <div class="card-hd"><span class="card-title">CVSS 补全 (NVD)</span></div>
+    <div class="card-body space-y-4">
+      <div>
+        <label class="form-label">NVD API Key <span class="text-muted-foreground font-normal">（可选）</span></label>
+        <input type="password" class="form-input" id="nvdApiKey" value="{{ settings.nvd_api_key }}" placeholder="留空也可用，但会受 NVD 限速（每 30 秒 5 次）">
+        <p class="text-xs text-muted-foreground mt-1.5">
+          用于从 NVD 自动补全 Excel 中缺失的 CVSS 评分。
+          <a href="https://nvd.nist.gov/developers/request-an-api-key" target="_blank" class="text-foreground underline underline-offset-2">免费申请 NVD API Key</a>
+          后填入可将限速提升到每 30 秒 50 次，大幅加速。补全操作在「漏洞列表」页右上角触发。
+        </p>
+      </div>
+      <div class="flex justify-end">
+        <button class="btn btn-default" onclick="saveSettings()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          保存
+        </button>
+      </div>
+    </div>
+  </div>
+
   <div class="card fade-in">
     <div class="card-hd"><span class="card-title">配置指南</span></div>
     <div class="card-body !pt-0">
@@ -127,7 +149,7 @@ function toggleAccordion(btn){ const c=btn.nextElementSibling; const ch=btn.quer
 function onProviderChange(){ const p=document.getElementById('aiProvider').value,h=document.getElementById('providerHelp'),t=document.getElementById('providerHelpText'); if(p&&providers[p]){document.getElementById('aiBaseUrl').value=providers[p].base_url;document.getElementById('aiModel').value=providers[p].model;h.classList.remove('hidden');t.textContent=`已自动填充 ${providers[p].name} 的默认配置`;}else{h.classList.add('hidden');} }
 function toggleApiKey(){ const i=document.getElementById('aiApiKey'); i.type=i.type==='password'?'text':'password'; }
 function showMessage(type,text){ const m=document.getElementById('statusMessage'); m.classList.remove('hidden'); m.className='alert alert-'+type; m.innerHTML=text; setTimeout(()=>m.classList.add('hidden'),5000); }
-async function saveSettings(){ const data={ai_enabled:isAiEnabled(),ai_provider:document.getElementById('aiProvider').value,ai_api_key:document.getElementById('aiApiKey').value,ai_base_url:document.getElementById('aiBaseUrl').value,ai_model:document.getElementById('aiModel').value}; try{ const r=await fetch('/api/settings/ai',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}); const j=await r.json(); if(j.success)showMessage('ok','设置已保存'); else showMessage('error','保存失败: '+(j.detail||'未知错误')); }catch(e){ showMessage('error','请求失败: '+e.message); } }
+async function saveSettings(){ const data={ai_enabled:isAiEnabled(),ai_provider:document.getElementById('aiProvider').value,ai_api_key:document.getElementById('aiApiKey').value,ai_base_url:document.getElementById('aiBaseUrl').value,ai_model:document.getElementById('aiModel').value,nvd_api_key:document.getElementById('nvdApiKey').value}; try{ const r=await fetch('/api/settings/ai',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}); const j=await r.json(); if(j.success)showMessage('ok','设置已保存'); else showMessage('error','保存失败: '+(j.detail||'未知错误')); }catch(e){ showMessage('error','请求失败: '+e.message); } }
 async function testConnection(){ const k=document.getElementById('aiApiKey').value; if(!k){showMessage('warn','请先填写 API 密钥');return;} showMessage('info','测试中…'); try{ const r=await fetch('/api/settings/ai/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ai_api_key:k,ai_base_url:document.getElementById('aiBaseUrl').value,ai_model:document.getElementById('aiModel').value})}); const j=await r.json(); showMessage(j.success?'ok':'error',j.message); }catch(e){ showMessage('error','测试失败: '+e.message); } }
 </script>
 {% endblock %}

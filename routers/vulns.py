@@ -1,10 +1,10 @@
 from typing import Optional
-from fastapi import APIRouter, Depends, Request, Query
+from fastapi import APIRouter, Depends, Request, Query, BackgroundTasks
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from db.database import get_db
+from db.database import get_db, SessionLocal
 from db.models import Vulnerability
 from services.vul_service import (
     get_vuln_list, get_vuln_detail, update_vuln_state,
@@ -12,7 +12,7 @@ from services.vul_service import (
     delete_vulns_by_numbers,
 )
 from services.ai_analyzer import analyze_vulnerabilities, generate_and_review_fix_plan
-from services.cve_lookup import enrich_cvss_scores
+from services.cve_lookup import enrich_cvss_scores, count_missing_cvss
 from services.detection_parser import parse_detection_logic
 from routers.settings import get_ai_settings
 
@@ -180,6 +180,39 @@ async def trigger_analysis(
     ai_settings = get_ai_settings(db)
     result = await analyze_vulnerabilities(db, ai_settings, vit_numbers)
     return result
+
+
+async def _run_cvss_enrich(nvd_api_key: str):
+    """Background task: enrich missing CVSS scores from NVD."""
+    db = SessionLocal()
+    try:
+        await enrich_cvss_scores(db, api_key=nvd_api_key or None)
+    except Exception as e:
+        print(f"CVSS enrichment failed: {e}")
+    finally:
+        db.close()
+
+
+@router.post("/api/vulns/enrich-cvss")
+async def trigger_cvss_enrich(
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """API: Enrich missing CVSS scores from NVD (runs in background)."""
+    pending = count_missing_cvss(db)
+    if pending == 0:
+        return {"success": True, "pending": 0, "message": "没有需要补全的 CVSS（所有带 CVE 的漏洞均已有评分）"}
+
+    nvd_key = get_ai_settings(db).get("nvd_api_key", "")
+    background_tasks.add_task(_run_cvss_enrich, nvd_key)
+
+    eta = round(pending * (0.7 if nvd_key else 6.5) / 60, 1)
+    note = "" if nvd_key else "（未配置 NVD API Key，速度受限；可在设置中填入 Key 加速）"
+    return {
+        "success": True,
+        "pending": pending,
+        "message": f"已在后台开始从 NVD 补全 {pending} 个 CVE 的 CVSS，预计约 {eta} 分钟，完成后刷新查看。{note}",
+    }
 
 
 @router.post("/api/vulns/{vit_number}/fix-plan")
