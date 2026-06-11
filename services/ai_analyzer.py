@@ -5,6 +5,7 @@ from typing import Optional
 import httpx
 from sqlalchemy.orm import Session
 from db.models import Vulnerability, VulnAnalysis
+from services.detection_parser import extract_fix_threshold, version_lt
 
 
 RISK_ANALYSIS_PROMPT = """你是一位资深的网络安全漏洞分析专家。请根据以下漏洞信息，生成简洁的风险分析报告。
@@ -21,6 +22,7 @@ CVSS向量: {cvss_vector}
 所需权限: {privileges_required}
 利用状态: {exploit_status}
 操作系统: {os_version}
+扫描器判定的修复阈值版本(权威依据，升级到此版本或更高即可修复；可能为空): {fix_threshold}
 受影响产品: {affected_products}
 修复建议: {remediation_steps}
 漏洞描述摘要: {description_summary}
@@ -32,7 +34,7 @@ CVSS向量: {cvss_vector}
 2. "fix_priority": 修复优先级，取值为 P0（立即修复）、P1（3天内）、P2（1周内）、P3（1个月内）
 3. "remediation_guide": 面向安全/运维负责人的【处置决策摘要】，2-3 条，帮助快速判断如何处置。注意：这里只讲方向，【不要写 apt/yum 等具体命令行】——具体可执行命令由单独的"修复方案"功能提供，避免重复:
    - 第1条 根因：结合"检测逻辑原文/受影响产品/操作系统"，一句话说明本机命中的具体组件及版本；若该版本已 EOL（停止维护，如 Node.js 12/14、Python 2、CentOS 6/7、Ubuntu 16.04 等），必须点明"已停止维护、不再获得安全补丁"
-   - 第2条 处置方向：升级到受支持的版本（给出目标大版本），或（若暂时无法升级）可采取的临时缓解方向；只说方向与目标，不写命令行
+   - 第2条 处置方向：说明应升级到的目标版本或缓解方向。若提供了"扫描器判定的修复阈值版本"，直接给出"升级到 X 或更高"（权威）；否则不要编造厂商产品的 build 号，可引用根因组件修复版本（如"需含 libwebp 1.3.2 修复"）或说"升级到厂商修复版本"
    - 第3条 紧急度：结合修复优先级与利用状态，给出建议处置时限（如"已被野外利用，建议 24 小时内处置"）
    - 信息不足以确定具体版本时，如实说明"需进一步确认 XX"，不要编造
 4. "detected_components": 从"检测逻辑原文"中提取被检测到的组件列表，每个组件包含:
@@ -62,6 +64,7 @@ CVE编号: {cve_id}
 操作系统: {os_version}
 服务器类型: {server_class}
 检测到的组件(扫描器实测结果，视为已确认安装的事实): {detected_components}
+扫描器判定的修复阈值版本(权威依据，升级到此版本或更高即可修复；可能为空): {fix_threshold}
 受影响产品: {affected_products}
 漏洞描述摘要: {description_summary}
 现有修复建议: {remediation_steps}
@@ -90,7 +93,12 @@ CVE编号: {cve_id}
     }}
   ]
 }}
-对"检测到的组件"中的每一项都要给出一行。无法确定安全版本时 fixed_version 写"待确认"并在 affected 写"待确认"。
+对"检测到的组件"中的每一项都要给出一行。
+版本判定的诚实性与一致性要求（重要，按优先级）:
+- 【最高优先】若上面提供了"扫描器判定的修复阈值版本"，它是权威依据：fixed_version 直接写"该阈值 或更高"，affected 由"当前版本是否低于该阈值"决定（低于=受影响），此时绝不要写"待确认"
+- 否则不要编造厂商产品的精确 build 号。对于 Chrome/Teams/Office 等厂商产品，若你不能确信其确切的修复 build 号，fixed_version 写"待确认（参见厂商安全公告）"，affected 写"待确认"
+- 仅当能明确给出语义化版本（如开源库 libwebp 1.3.2、nginx 1.25.3、Node.js 18.x）时才直接断言具体版本
+- 同一方案内对"安全版本/修复版本"的判定必须前后一致，不得出现两个互相矛盾的安全版本号
 
 如果是 "runbook" 类，请输出（JSON）:
 {{
@@ -198,12 +206,14 @@ def _build_user_prompt(vuln: Vulnerability, analysis) -> str:
     detection_logic = (analysis.detection_logic[:800] if analysis and analysis.detection_logic else "N/A")
     os_version = (analysis.os_version if analysis and analysis.os_version else "") \
         or extract_os_version(vuln.raw_description) or "N/A"
+    fix_threshold = extract_fix_threshold(analysis.detection_logic) if analysis else None
     return RISK_ANALYSIS_PROMPT.format(
         vit_number=vuln.vit_number,
         cve_id=vuln.cve_id or "N/A",
         hostname=vuln.hostname or "N/A",
         server_class=vuln.server_class or "N/A",
         os_version=os_version,
+        fix_threshold=fix_threshold or "（无，需自行判断）",
         severity=vuln.severity or "N/A",
         cvss_score=analysis.cvss_score if analysis else "N/A",
         cvss_vector=analysis.cvss_vector if analysis else "N/A",
@@ -428,12 +438,14 @@ async def generate_fix_plan(vuln: Vulnerability, ai_settings: dict) -> Optional[
         os_version = analysis.os_version
 
     desc_summary = get_description_summary(vuln.raw_description)
+    fix_threshold = extract_fix_threshold(analysis.detection_logic) if analysis else None
 
     user_prompt = FIX_PLAN_PROMPT.format(
         cve_id=vuln.cve_id or "N/A",
         os_version=os_version,
         server_class=vuln.server_class or "N/A",
         detected_components=detected_components,
+        fix_threshold=fix_threshold or "（无，需自行判断）",
         affected_products=(analysis.affected_products[:400] if analysis and analysis.affected_products else "N/A"),
         description_summary=desc_summary,
         remediation_steps=(analysis.remediation_steps[:500] if analysis and analysis.remediation_steps else "N/A"),
@@ -451,11 +463,30 @@ async def generate_fix_plan(vuln: Vulnerability, ai_settings: dict) -> Optional[
                     ai_settings.get("ai_model", ""), max_tokens=4000)
 
             if content:
-                return _parse_ai_response(content)
+                result = _parse_ai_response(content)
+                return _apply_fix_threshold(result, fix_threshold)
         return None
     except Exception as e:
         print(f"Fix plan generation failed for {vuln.vit_number}: {e}")
         return None
+
+
+def _apply_fix_threshold(plan: Optional[dict], fix_threshold: Optional[str]) -> Optional[dict]:
+    """For upgrade plans with a scanner-provided fix threshold, set affected/fixed
+    deterministically (numeric version compare) — the scanner threshold is authoritative."""
+    if not plan or not fix_threshold or plan.get("plan_type") != "upgrade":
+        return plan
+    for c in plan.get("components", []):
+        cur = c.get("current_version") or ""
+        c["fixed_version"] = f"{fix_threshold} 或更高"
+        if any(ch.isdigit() for ch in cur):
+            if version_lt(cur, fix_threshold):
+                c["affected"] = "受影响"
+                c["affected_reason"] = f"当前版本 {cur} 低于扫描器修复阈值 {fix_threshold}"
+            else:
+                c["affected"] = "不受影响"
+                c["affected_reason"] = f"当前版本 {cur} 不低于修复阈值 {fix_threshold}"
+    return plan
 
 
 async def review_fix_plan(vuln: Vulnerability, fix_plan: dict, ai_settings: dict) -> Optional[dict]:

@@ -93,6 +93,32 @@ def parse_detection_logic(text: str | None) -> list[dict]:
     return _dedupe_items(items)
 
 
+def extract_fix_threshold(text: str | None) -> str | None:
+    """Extract the scanner's fix threshold version from detection logic.
+
+    CrowdStrike checks like "version ... is less than 1.6.00.26474" encode the
+    authoritative fixed version: upgrading to >= that version remediates the CVE.
+    Returns the highest such threshold, or None.
+    """
+    if not text:
+        return None
+    cands = re.findall(r"less than\s+([0-9][0-9A-Za-z.\-_:]*)", text, re.IGNORECASE)
+    cands = [c.strip().rstrip(".") for c in cands if re.search(r"\d", c)]
+    if not cands:
+        return None
+    cands.sort(key=lambda s: [int(x) for x in re.findall(r"\d+", s)])
+    return cands[-1]
+
+
+def version_tuple(s: str) -> list[int]:
+    return [int(x) for x in re.findall(r"\d+", str(s or ""))]
+
+
+def version_lt(a: str, b: str) -> bool:
+    """Numeric version comparison: is a < b? (handles 1.6.00.x == 1.6.0.x)."""
+    return version_tuple(a) < version_tuple(b)
+
+
 def _norm_name(s: str) -> str:
     return re.sub(r"[\s\-_]+", "", (s or "").lower())
 
