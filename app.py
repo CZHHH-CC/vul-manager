@@ -4,7 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from db.database import engine, Base
 from db.models import Settings, Vulnerability, VulnAnalysis, VulnHistory, UploadLog
-from routers import upload, vulns, dashboard, reports, settings
+from routers import upload, vulns, dashboard, reports, settings, kpi
 from services.detection_parser import parse_detection_logic
 from config import HOST, PORT
 
@@ -22,6 +22,7 @@ app.include_router(dashboard.router)
 app.include_router(upload.router)
 app.include_router(vulns.router)
 app.include_router(reports.router)
+app.include_router(kpi.router)
 app.include_router(settings.router)
 
 

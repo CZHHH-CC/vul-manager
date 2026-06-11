@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timedelta
 from typing import Optional
 from sqlalchemy import func, case, and_, extract
@@ -38,6 +39,73 @@ def get_dashboard_stats(db: Session) -> dict:
         "cve_count": cve_count,
         "fix_rate": fix_rate,
         "overdue": overdue,
+    }
+
+
+def get_snow_kpi(db: Session) -> dict:
+    """SNOW KPI metrics for currently OPEN vulnerabilities."""
+    OPEN_STATES = ["Open", "In Progress"]
+    base = db.query(Vulnerability).filter(Vulnerability.state.in_(OPEN_STATES))
+
+    open_total = base.count()
+    now = datetime.utcnow()
+
+    # Severity distribution (open)
+    sev = {1: 0, 2: 0, 3: 0, 4: 0}
+    for lvl, cnt in db.query(Vulnerability.severity_level, func.count(Vulnerability.id))\
+            .filter(Vulnerability.state.in_(OPEN_STATES))\
+            .group_by(Vulnerability.severity_level).all():
+        sev[lvl or 4] = cnt
+
+    # Aging buckets by opened_at
+    def aged(min_days, max_days=None):
+        q = base.filter(Vulnerability.opened_at.isnot(None),
+                        Vulnerability.opened_at < now - timedelta(days=min_days))
+        if max_days is not None:
+            q = q.filter(Vulnerability.opened_at >= now - timedelta(days=max_days))
+        return q.count()
+
+    overdue_30 = aged(30)
+    aging = {
+        "0-30天": base.filter(Vulnerability.opened_at >= now - timedelta(days=30)).count(),
+        "30-60天": aged(30, 60),
+        "60-90天": aged(60, 90),
+        ">90天": aged(90),
+    }
+
+    cve_count = db.query(func.count(func.distinct(Vulnerability.cve_id)))\
+        .filter(Vulnerability.state.in_(OPEN_STATES)).scalar() or 0
+    hosts = db.query(func.count(func.distinct(Vulnerability.hostname)))\
+        .filter(Vulnerability.state.in_(OPEN_STATES)).scalar() or 0
+
+    # By server class (open)
+    by_class = [
+        {"class": r[0] or "Unknown", "count": r[1]}
+        for r in db.query(Vulnerability.server_class, func.count(Vulnerability.id))
+        .filter(Vulnerability.state.in_(OPEN_STATES))
+        .group_by(Vulnerability.server_class)
+        .order_by(func.count(Vulnerability.id).desc()).all()
+    ]
+
+    # By assignment group (open, top 10)
+    by_group = [
+        {"group": r[0] or "未分配", "count": r[1]}
+        for r in db.query(Vulnerability.assignment_group, func.count(Vulnerability.id))
+        .filter(Vulnerability.state.in_(OPEN_STATES))
+        .group_by(Vulnerability.assignment_group)
+        .order_by(func.count(Vulnerability.id).desc()).limit(10).all()
+    ]
+
+    return {
+        "open_total": open_total,
+        "overdue_30": overdue_30,
+        "overdue_rate": round(overdue_30 / open_total * 100, 1) if open_total else 0,
+        "critical": sev[1], "high": sev[2], "medium": sev[3], "low": sev[4],
+        "cve_count": cve_count,
+        "hosts_affected": hosts,
+        "aging": aging,
+        "by_class": by_class,
+        "by_group": by_group,
     }
 
 
@@ -280,6 +348,57 @@ def get_upload_history(db: Session, limit: int = 10) -> list[UploadLog]:
 
 # ─── Export ───────────────────────────────────────────────────────────────────
 
+def _format_components(json_str: Optional[str]) -> str:
+    """Format detected_components JSON into a readable multi-line string (name version — path)."""
+    if not json_str:
+        return ""
+    try:
+        items = json.loads(json_str)
+    except (json.JSONDecodeError, TypeError):
+        return ""
+    lines = []
+    for c in items:
+        name = (c.get("name") or "").strip()
+        ver = (c.get("version") or "").strip()
+        path = (c.get("path") or "").strip()
+        seg = " ".join(x for x in [name, ver] if x)
+        if path:
+            seg = f"{seg} — {path}" if seg else path
+        if seg:
+            lines.append(seg)
+    return "\n".join(lines)
+
+
+def _format_fix_plan(json_str: Optional[str]) -> str:
+    """Format ai_fix_plan JSON into a concise readable string for export."""
+    if not json_str:
+        return ""
+    try:
+        p = json.loads(json_str)
+    except (json.JSONDecodeError, TypeError):
+        return ""
+    if p.get("plan_type") == "upgrade":
+        lines = []
+        if p.get("summary"):
+            lines.append(p["summary"])
+        for c in p.get("components", []):
+            name = (c.get("name") or "").strip()
+            cur = (c.get("current_version") or "").strip()
+            aff = (c.get("affected") or "").strip()
+            fixed = (c.get("fixed_version") or "").strip()
+            lines.append(f"· {name} 当前 {cur or 'N/A'} [{aff or 'N/A'}] → 升级到 {fixed or 'N/A'}")
+        return "\n".join(lines)
+    # runbook
+    lines = []
+    if p.get("fix_summary"):
+        lines.append(p["fix_summary"])
+    for s in p.get("fix_steps", []):
+        action = (s.get("action") or "").strip()
+        cmd = (s.get("command") or "").strip()
+        lines.append(f"{s.get('step', '')}. {action}" + (f"  [{cmd}]" if cmd else ""))
+    return "\n".join(lines)
+
+
 def export_vulns_for_report(db: Session, severity: Optional[str] = None, state: Optional[str] = None) -> list[dict]:
     """Export vulnerabilities as list of dicts for Excel/report generation."""
     query = db.query(Vulnerability)
@@ -299,14 +418,15 @@ def export_vulns_for_report(db: Session, severity: Optional[str] = None, state: 
             "主机名": v.hostname,
             "IP地址": v.ip_address or "",
             "服务器类型": v.server_class,
+            "服务器版本": (a.os_version if a and a.os_version else ""),
             "严重程度": v.severity,
             "状态": v.state,
             "CVSS评分": a.cvss_score if a else "",
-            "攻击向量": a.attack_vector if a else "",
             "利用状态": a.exploit_status if a else "",
             "修复优先级": a.ai_fix_priority if a else "",
-            "修复建议": a.remediation_steps[:200] if a and a.remediation_steps else "",
-            "AI风险摘要": a.ai_risk_summary if a else "",
+            "检测到的组件": _format_components(a.detected_components if a else None),
+            "操作指南": a.ai_remediation_guide if a and a.ai_remediation_guide else "",
+            "修复方案": _format_fix_plan(a.ai_fix_plan if a else None),
             "负责团队": v.assignment_group or "",
             "创建时间": v.opened_at.strftime("%Y-%m-%d") if v.opened_at else "",
             "更新时间": v.updated_at.strftime("%Y-%m-%d") if v.updated_at else "",

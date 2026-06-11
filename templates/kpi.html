@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}SNOW KPI 统计 - 漏洞管理系统{% endblock %}
+
+{% block content %}
+
+<div class="mb-6 flex items-end justify-between gap-4 flex-wrap">
+  <div>
+    <h1 class="hero-title">SNOW KPI 统计</h1>
+    <p class="hero-sub">统计范围：当前未关闭漏洞（Open / In Progress）</p>
+  </div>
+  <a href="/api/reports/kpi/pdf" target="_blank" class="btn btn-default btn-sm">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>
+    </svg>
+    导出 PDF
+  </a>
+</div>
+
+<!-- Core metrics -->
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+  <div class="card card-body !pt-5 fade-in">
+    <p class="text-sm text-muted-foreground">未关闭漏洞</p>
+    <p class="text-3xl font-semibold tracking-tightish mt-1">{{ kpi.open_total }}</p>
+  </div>
+  <div class="card card-body !pt-5 fade-in">
+    <p class="text-sm text-muted-foreground">超期未修复 <span class="text-xs">(&gt;30天)</span></p>
+    <p class="text-3xl font-semibold tracking-tightish mt-1 text-amber-600">{{ kpi.overdue_30 }}</p>
+    <p class="text-xs text-muted-foreground mt-1">占比 {{ kpi.overdue_rate }}%</p>
+  </div>
+  <div class="card card-body !pt-5 fade-in">
+    <p class="text-sm text-muted-foreground">涉及 CVE</p>
+    <p class="text-3xl font-semibold tracking-tightish mt-1">{{ kpi.cve_count }}</p>
+  </div>
+  <div class="card card-body !pt-5 fade-in">
+    <p class="text-sm text-muted-foreground">受影响主机</p>
+    <p class="text-3xl font-semibold tracking-tightish mt-1">{{ kpi.hosts_affected }}</p>
+  </div>
+</div>
+
+<!-- Severity -->
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+  {% set sev = [('严重', kpi.critical, 'text-red-600'), ('高危', kpi.high, 'text-orange-600'), ('中危', kpi.medium, 'text-amber-600'), ('低危', kpi.low, 'text-muted-foreground')] %}
+  {% for label, val, color in sev %}
+  <div class="card px-4 py-3 fade-in">
+    <p class="text-xs text-muted-foreground">{{ label }}</p>
+    <p class="text-xl font-semibold tracking-tightish mt-0.5 {{ color }}">{{ val }}</p>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+  <!-- Aging -->
+  <div class="card fade-in">
+    <div class="card-hd"><span class="card-title">漏洞时效分布</span></div>
+    <div class="card-body">
+      <div class="space-y-3">
+        {% set maxv = (kpi.aging.values() | max) or 1 %}
+        {% for label, val in kpi.aging.items() %}
+        <div>
+          <div class="flex justify-between text-sm mb-1">
+            <span>{{ label }}</span>
+            <span class="font-medium">{{ val }}</span>
+          </div>
+          <div class="progress-track h-2">
+            <div class="progress-fill {% if '>90' in label %}bg-red-500{% elif '60-90' in label %}bg-orange-500{% elif '30-60' in label %}bg-amber-500{% else %}bg-emerald-500{% endif %}" style="width: {{ (val / maxv * 100) | round }}%"></div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <!-- By server class -->
+  <div class="card fade-in">
+    <div class="card-hd"><span class="card-title">按服务器类型分布</span></div>
+    <div class="overflow-x-auto">
+      <table class="w-full">
+        <thead><tr class="border-b border-border"><th class="tbl-th">服务器类型</th><th class="tbl-th text-right pr-4">未关闭数</th></tr></thead>
+        <tbody>
+          {% for c in kpi.by_class %}
+          <tr class="tbl-row">
+            <td class="tbl-td">{{ c.class }}</td>
+            <td class="tbl-td text-right pr-4 font-medium">{{ c.count }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- By assignment group -->
+<div class="card fade-in mt-4">
+  <div class="card-hd"><span class="card-title">按负责团队分布（Top 10）</span></div>
+  <div class="overflow-x-auto">
+    <table class="w-full">
+      <thead><tr class="border-b border-border"><th class="tbl-th">负责团队</th><th class="tbl-th text-right pr-4">未关闭数</th></tr></thead>
+      <tbody>
+        {% for g in kpi.by_group %}
+        <tr class="tbl-row">
+          <td class="tbl-td">{{ g.group }}</td>
+          <td class="tbl-td text-right pr-4 font-medium">{{ g.count }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}
