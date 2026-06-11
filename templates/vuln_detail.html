@@ -292,6 +292,33 @@ function generateFixPlan(){
     {% if analysis.ai_fix_plan_review %}const review={{ analysis.ai_fix_plan_review | safe }};{% else %}const review=null;{% endif %}
     let html='';
 
+    // ── Upgrade-type vuln: concise component assessment (component / version / affected / target) ──
+    if(plan.plan_type==='upgrade'){
+      const badgeEl=document.getElementById('fixPlanReviewedBadge');
+      if(badgeEl) badgeEl.innerHTML=`<span class="badge badge-secondary">升级评估</span>`;
+      if(plan.summary) html+=`<div class="rounded-lg bg-muted p-3 text-sm">${asText(plan.summary)}</div>`;
+      const comps=plan.components||[];
+      if(comps.length){
+        html+=`<div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr class="border-b border-border">`+
+              `<th class="tbl-th">组件</th><th class="tbl-th">当前版本</th><th class="tbl-th">路径</th><th class="tbl-th">是否受影响</th><th class="tbl-th">升级到</th>`+
+              `</tr></thead><tbody>`;
+        comps.forEach(c=>{
+          const aff=c.affected||'待确认';
+          const bc=aff==='受影响'?'badge-destructive':aff==='不受影响'?'badge-emerald':'badge-amber';
+          html+=`<tr class="border-b border-border">`+
+            `<td class="tbl-td align-top font-medium">${asText(c.name)}</td>`+
+            `<td class="tbl-td align-top"><code>${asText(c.current_version)}</code></td>`+
+            `<td class="tbl-td align-top text-xs text-muted-foreground break-all">${asText(c.path)}</td>`+
+            `<td class="tbl-td align-top"><span class="badge ${bc}">${esc(aff)}</span>${c.affected_reason?`<div class="text-xs text-muted-foreground mt-1">${asText(c.affected_reason)}</div>`:''}</td>`+
+            `<td class="tbl-td align-top font-medium">${asText(c.fixed_version)}</td>`+
+          `</tr>`;
+        });
+        html+=`</tbody></table></div>`;
+      }
+      planEl.innerHTML=html;
+      return;
+    }
+
     if(plan.fix_summary) html+=`<div class="rounded-lg bg-muted p-3 text-sm">${asText(plan.fix_summary)}</div>`;
     if(plan.prerequisites) html+=`<div><p class="text-xs font-semibold text-muted-foreground mb-1">准备工作</p><div class="text-sm text-muted-foreground">${asText(plan.prerequisites)}</div></div>`;
     if(plan.fix_steps&&plan.fix_steps.length){
