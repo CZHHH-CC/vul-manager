@@ -133,26 +133,26 @@
             {% endif %}
           </div>
           <div class="rounded-lg border border-border overflow-hidden">
-            <table class="w-full text-sm">
+            <table class="w-full text-sm table-fixed">
               <thead><tr class="border-b border-border bg-muted/40">
-                <th class="tbl-th">组件</th>
-                <th class="tbl-th">版本</th>
+                <th class="tbl-th w-[26%]">组件</th>
+                <th class="tbl-th w-28">版本</th>
                 <th class="tbl-th">路径</th>
-                <th class="tbl-th">校验</th>
+                <th class="tbl-th w-24">校验</th>
               </tr></thead>
               <tbody>
                 {% for item in detected_components %}
                 <tr class="tbl-row">
-                  <td class="tbl-td font-medium">{{ item.name or '—' }}</td>
-                  <td class="tbl-td">
+                  <td class="tbl-td font-medium break-all align-top">{{ item.name or '—' }}</td>
+                  <td class="tbl-td break-all align-top">
                     {% if item.version %}<code class="text-xs bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded border border-emerald-200">{{ item.version }}</code>
                     {% else %}<span class="text-muted-foreground">—</span>{% endif %}
                   </td>
-                  <td class="tbl-td">
-                    {% if item.path %}<code class="text-xs">{{ item.path }}</code>
+                  <td class="tbl-td align-top">
+                    {% if item.path %}<code class="text-xs break-all">{{ item.path }}</code>
                     {% else %}<span class="text-muted-foreground">—</span>{% endif %}
                   </td>
-                  <td class="tbl-td">
+                  <td class="tbl-td align-top">
                     {% if item.check == '一致' %}<span class="badge badge-emerald">✓ 一致</span>
                     {% elif item.check == '版本差异' %}<span class="badge badge-destructive" title="正则: {{ item.regex_version }}">版本差异</span>
                     {% elif item.check == '仅AI' %}<span class="badge badge-amber">仅 AI</span>
