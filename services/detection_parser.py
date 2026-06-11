@@ -93,6 +93,86 @@ def parse_detection_logic(text: str | None) -> list[dict]:
     return _dedupe_items(items)
 
 
+def _norm_name(s: str) -> str:
+    return re.sub(r"[\s\-_]+", "", (s or "").lower())
+
+
+def _ver_core(s: str) -> str:
+    """Extract the dotted numeric core of a version string."""
+    m = re.search(r"\d+(?:\.\d+)+", str(s or ""))
+    if m:
+        return m.group(0)
+    return re.sub(r"[^\d.]", "", str(s or ""))
+
+
+def cross_validate_components(ai_components: list[dict] | None,
+                             regex_components: list[dict] | None):
+    """Cross-check AI-extracted components against regex-extracted ones.
+
+    Returns (display_list, summary):
+      - display_list: unified rows, each with name/version/path + source + check
+        check in {"一致","版本差异","仅AI","仅正则",""}
+      - summary: {available, verdict, agree, diff, ai_only, regex_only, source}
+    """
+    ai = ai_components or []
+    regex = regex_components or []
+
+    # Only one source available -> nothing to cross-check
+    if not ai or not regex:
+        src = "ai" if ai else ("regex" if regex else None)
+        rows = [{**c, "source": src, "check": ""} for c in (ai or regex)]
+        verdict = "仅AI来源" if ai else ("仅正则来源" if regex else "无数据")
+        return rows, {"available": False, "verdict": verdict, "source": src,
+                      "agree": 0, "diff": 0, "ai_only": 0, "regex_only": 0}
+
+    used = set()
+    rows = []
+    agree = diff = ai_only = 0
+
+    for a in ai:
+        an, av = _norm_name(a.get("name")), _ver_core(a.get("version"))
+        match_idx = None
+        for i, r in enumerate(regex):
+            if i in used:
+                continue
+            rn, rv = _norm_name(r.get("name")), _ver_core(r.get("version"))
+            name_match = an and rn and (an in rn or rn in an)
+            ver_match = av and rv and (av in rv or rv in av)
+            path_match = a.get("path") and r.get("path") and (
+                _norm_name(a["path"]) in _norm_name(r["path"]) or _norm_name(r["path"]) in _norm_name(a["path"]))
+            if name_match or path_match or (not an and ver_match):
+                match_idx = i
+                break
+
+        row = {"name": a.get("name"), "version": a.get("version"),
+               "path": a.get("path"), "source": "ai"}
+        if match_idx is not None:
+            used.add(match_idx)
+            rv = _ver_core(regex[match_idx].get("version"))
+            row["source"] = "both"
+            if av and rv and not (av in rv or rv in av):
+                row["check"] = "版本差异"
+                row["regex_version"] = regex[match_idx].get("version")
+                diff += 1
+            else:
+                row["check"] = "一致"
+                agree += 1
+        else:
+            row["check"] = "仅AI"
+            ai_only += 1
+        rows.append(row)
+
+    regex_only_items = [r for i, r in enumerate(regex) if i not in used]
+    for r in regex_only_items:
+        rows.append({"name": r.get("name"), "version": r.get("version"),
+                     "path": r.get("path"), "source": "regex", "check": "仅正则"})
+
+    regex_only = len(regex_only_items)
+    verdict = "一致" if (diff == 0 and ai_only == 0 and regex_only == 0) else "有差异"
+    return rows, {"available": True, "verdict": verdict, "source": "both",
+                  "agree": agree, "diff": diff, "ai_only": ai_only, "regex_only": regex_only}
+
+
 def _split_package_version(pkg: str) -> tuple[str, str]:
     """Split a package string like 'kernel-5.14.0-611.45.1.el9_7.x86_64' into name and version."""
     # Common patterns: name-version.arch.rpm or name-version

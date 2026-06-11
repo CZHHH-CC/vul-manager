@@ -118,13 +118,27 @@
 
         {% if detected_components %}
         <div>
-          <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">检测到的组件</p>
+          <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+            <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wide">检测到的组件</p>
+            {% if component_check %}
+              {% if component_check.available %}
+                {% if component_check.verdict == '一致' %}
+                <span class="badge badge-emerald">✓ AI 与正则一致（{{ component_check.agree }} 项）</span>
+                {% else %}
+                <span class="badge badge-amber">⚠ 存在差异{% if component_check.diff %} · 版本不一致 {{ component_check.diff }}{% endif %}{% if component_check.ai_only %} · 仅AI {{ component_check.ai_only }}{% endif %}{% if component_check.regex_only %} · 仅正则 {{ component_check.regex_only }}{% endif %}</span>
+                {% endif %}
+              {% else %}
+                <span class="badge badge-secondary">来源：{% if component_check.source == 'ai' %}AI 提取{% elif component_check.source == 'regex' %}正则提取{% else %}—{% endif %}（无交叉校验）</span>
+              {% endif %}
+            {% endif %}
+          </div>
           <div class="rounded-lg border border-border overflow-hidden">
             <table class="w-full text-sm">
               <thead><tr class="border-b border-border bg-muted/40">
                 <th class="tbl-th">组件</th>
                 <th class="tbl-th">版本</th>
                 <th class="tbl-th">路径</th>
+                <th class="tbl-th">校验</th>
               </tr></thead>
               <tbody>
                 {% for item in detected_components %}
@@ -138,11 +152,21 @@
                     {% if item.path %}<code class="text-xs">{{ item.path }}</code>
                     {% else %}<span class="text-muted-foreground">—</span>{% endif %}
                   </td>
+                  <td class="tbl-td">
+                    {% if item.check == '一致' %}<span class="badge badge-emerald">✓ 一致</span>
+                    {% elif item.check == '版本差异' %}<span class="badge badge-destructive" title="正则: {{ item.regex_version }}">版本差异</span>
+                    {% elif item.check == '仅AI' %}<span class="badge badge-amber">仅 AI</span>
+                    {% elif item.check == '仅正则' %}<span class="badge badge-blue">仅正则</span>
+                    {% else %}<span class="text-muted-foreground text-xs">—</span>{% endif %}
+                  </td>
                 </tr>
                 {% endfor %}
               </tbody>
             </table>
           </div>
+          {% if component_check and component_check.diff %}
+          <p class="text-xs text-muted-foreground mt-1.5">提示：标「版本差异」的行，AI 与正则解析的版本号不一致，建议人工核对（鼠标悬停可见正则结果）。</p>
+          {% endif %}
         </div>
         {% elif analysis and analysis.detection_logic %}
         <div>

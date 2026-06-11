@@ -13,7 +13,7 @@ from services.vul_service import (
 )
 from services.ai_analyzer import analyze_vulnerabilities, generate_and_review_fix_plan
 from services.cve_lookup import enrich_cvss_scores, count_missing_cvss
-from services.detection_parser import parse_detection_logic
+from services.detection_parser import parse_detection_logic, cross_validate_components
 from routers.settings import get_ai_settings
 
 router = APIRouter()
@@ -118,16 +118,16 @@ async def vuln_detail_page(
 
     history = get_vuln_history(db, vit_number)
 
-    # Try AI-extracted components first, fall back to regex parser
-    detected_components = []
+    # Cross-validate AI-extracted components against regex-extracted ones
+    ai_components = []
     if vuln.analysis and vuln.analysis.detected_components:
         try:
             import json
-            detected_components = json.loads(vuln.analysis.detected_components)
+            ai_components = json.loads(vuln.analysis.detected_components)
         except (json.JSONDecodeError, TypeError):
-            pass
-    if not detected_components and vuln.analysis:
-        detected_components = parse_detection_logic(vuln.analysis.detection_logic)
+            ai_components = []
+    regex_components = parse_detection_logic(vuln.analysis.detection_logic) if vuln.analysis else []
+    detected_components, component_check = cross_validate_components(ai_components, regex_components)
 
     return templates.TemplateResponse("vuln_detail.html", {
         "request": request,
@@ -135,6 +135,7 @@ async def vuln_detail_page(
         "analysis": vuln.analysis,
         "history": history,
         "detected_components": detected_components,
+        "component_check": component_check,
     })
 
 
