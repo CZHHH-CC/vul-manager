@@ -1,0 +1,63 @@
+# 部署用 compose：直接拉取阿里云镜像启动，无需本地构建。
+# 用法：
+#   1) cp .env.deploy.example .env   （按需修改密码 / AI 配置）
+#   2) docker compose -f docker-compose.deploy.yml pull
+#   3) docker compose -f docker-compose.deploy.yml up -d
+#   访问 http://<服务器IP>:8000
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: vul-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: vuldb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vulpass2026}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d vuldb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - vul-network
+
+  app:
+    image: registry.cn-hangzhou.aliyuncs.com/vul_manager/vul_manager:latest
+    container_name: vul-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-vulpass2026}@db:5432/vuldb
+      # AI 可留空，部署后在「设置」页面里配置；也可在此直接注入
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_PROVIDER: ${AI_PROVIDER:-}
+      AI_BASE_URL: ${AI_BASE_URL:-https://api.openai.com/v1}
+      AI_MODEL: ${AI_MODEL:-gpt-4o-mini}
+      HOST: "0.0.0.0"
+      PORT: "8000"
+    volumes:
+      - ./uploads:/app/uploads
+      - ./reports:/app/reports
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/api/dashboard/stats').raise_for_status()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    networks:
+      - vul-network
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  vul-network:
+    driver: bridge
