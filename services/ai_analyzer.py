@@ -605,18 +605,25 @@ async def generate_fix_plans_bulk(db: Session, ai_settings: dict,
 
     async def _one(vuln):
         nonlocal generated, errors
-        async with semaphore:
-            final_plan, meta = await _build_reviewed_plan(vuln, ai_settings)
-        if not final_plan:
+        try:
+            async with semaphore:
+                final_plan, meta = await _build_reviewed_plan(vuln, ai_settings)
+            if not final_plan:
+                errors += 1
+                return
+            vuln.analysis.ai_fix_plan = json.dumps(final_plan, ensure_ascii=False)
+            vuln.analysis.ai_fix_plan_review = json.dumps(meta, ensure_ascii=False)
+            generated += 1
+        except Exception as e:
+            # One bad vuln must never abort the whole batch
             errors += 1
-            return
-        vuln.analysis.ai_fix_plan = json.dumps(final_plan, ensure_ascii=False)
-        vuln.analysis.ai_fix_plan_review = json.dumps(meta, ensure_ascii=False)
-        generated += 1
+            print(f"Bulk fix plan failed for {getattr(vuln, 'vit_number', '?')}: {e}")
 
     batch_size = 30
     for i in range(0, len(candidates), batch_size):
-        await asyncio.gather(*[_one(v) for v in candidates[i:i + batch_size]])
+        # return_exceptions=True so a stray error can't cancel the gather
+        await asyncio.gather(*[_one(v) for v in candidates[i:i + batch_size]],
+                             return_exceptions=True)
         db.commit()
 
     return {"generated": generated, "errors": errors, "total": len(candidates)}

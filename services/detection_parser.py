@@ -188,13 +188,11 @@ def cross_validate_components(ai_components: list[dict] | None,
             ai_only += 1
         rows.append(row)
 
-    regex_only_items = [r for i, r in enumerate(regex) if i not in used]
-    for r in regex_only_items:
-        rows.append({"name": r.get("name"), "version": r.get("version"),
-                     "path": r.get("path"), "source": "regex", "check": "仅正则"})
+    # Regex-only items are almost always noise (e.g. OS codename checks like
+    # "jammy"), so they are NOT displayed and do NOT affect the verdict.
+    regex_only = len([r for i, r in enumerate(regex) if i not in used])
 
-    regex_only = len(regex_only_items)
-    verdict = "一致" if (diff == 0 and ai_only == 0 and regex_only == 0) else "有差异"
+    verdict = "一致" if (diff == 0 and ai_only == 0) else "有差异"
     return rows, {"available": True, "verdict": verdict, "source": "both",
                   "agree": agree, "diff": diff, "ai_only": ai_only, "regex_only": regex_only}
 

@@ -125,7 +125,7 @@
                 {% if component_check.verdict == '一致' %}
                 <span class="badge badge-emerald">✓ AI 与正则一致（{{ component_check.agree }} 项）</span>
                 {% else %}
-                <span class="badge badge-amber">⚠ 存在差异{% if component_check.diff %} · 版本不一致 {{ component_check.diff }}{% endif %}{% if component_check.ai_only %} · 仅AI {{ component_check.ai_only }}{% endif %}{% if component_check.regex_only %} · 仅正则 {{ component_check.regex_only }}{% endif %}</span>
+                <span class="badge badge-amber">⚠ 存在差异{% if component_check.diff %} · 版本不一致 {{ component_check.diff }}{% endif %}{% if component_check.ai_only %} · 仅AI识别 {{ component_check.ai_only }}{% endif %}</span>
                 {% endif %}
               {% else %}
                 <span class="badge badge-secondary">来源：{% if component_check.source == 'ai' %}AI 提取{% elif component_check.source == 'regex' %}正则提取{% else %}—{% endif %}（无交叉校验）</span>
