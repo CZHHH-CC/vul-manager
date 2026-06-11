@@ -167,6 +167,36 @@ def parse_remediation(rec_html: str) -> dict:
     return result
 
 
+def extract_detection_logic(html: str) -> str | None:
+    """Extract the 'Detection Logic' block from any HTML column.
+
+    Some tickets put Detection Logic in the Recommendation column, others in
+    Description. Tries the structured sibling-div first, then falls back to
+    grabbing the text after the 'Detection Logic' marker.
+    """
+    if not html or pd.isna(html):
+        return None
+    soup = BeautifulSoup(str(html), "lxml")
+
+    # Structured: a div labelled "Detection Logic" followed by a content div
+    for div in soup.find_all("div"):
+        if "Detection Logic" in div.get_text(strip=True):
+            sib = div.find_next_sibling("div")
+            if sib:
+                t = sib.get_text(strip=True)
+                if t:
+                    return t
+            break
+
+    # Fallback: take the text following the "Detection Logic" marker
+    text = soup.get_text(" ", strip=True)
+    idx = text.find("Detection Logic")
+    if idx >= 0:
+        chunk = text[idx:idx + 2500].strip()
+        return chunk or None
+    return None
+
+
 def parse_description(desc_html: str) -> dict:
     """Parse all structured data from Description HTML."""
     if not desc_html or pd.isna(desc_html):
@@ -214,6 +244,9 @@ def parse_excel_to_records(filepath: str) -> list[dict]:
         desc_data = parse_description(desc_html)
         rec_data = parse_remediation(rec_html)
 
+        # Detection Logic may live in either column — fall back to Description
+        detection_logic = rec_data.get("detection_logic") or extract_detection_logic(desc_html)
+
         # Parse dates
         opened_at = row.get("Opened")
         updated_at = row.get("Updated")
@@ -251,7 +284,7 @@ def parse_excel_to_records(filepath: str) -> list[dict]:
             "affected_products": desc_data.get("affected_products"),
             "exploit_status": desc_data.get("exploit_status"),
             "remediation_steps": rec_data.get("remediation_steps"),
-            "detection_logic": rec_data.get("detection_logic"),
+            "detection_logic": detection_logic,
         }
         records.append(record)
 
