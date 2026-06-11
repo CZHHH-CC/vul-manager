@@ -5,13 +5,13 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from db.database import get_db, SessionLocal
-from db.models import Vulnerability
+from db.models import Vulnerability, VulnAnalysis
 from services.vul_service import (
     get_vuln_list, get_vuln_detail, update_vuln_state,
     get_vuln_history, get_filter_options, get_overdue_vulns,
     delete_vulns_by_numbers,
 )
-from services.ai_analyzer import analyze_vulnerabilities, generate_and_review_fix_plan
+from services.ai_analyzer import analyze_vulnerabilities, generate_and_review_fix_plan, generate_fix_plans_bulk
 from services.cve_lookup import enrich_cvss_scores, count_missing_cvss
 from services.detection_parser import parse_detection_logic, cross_validate_components
 from routers.settings import get_ai_settings
@@ -213,6 +213,46 @@ async def trigger_cvss_enrich(
         "success": True,
         "pending": pending,
         "message": f"已在后台开始从 NVD 补全 {pending} 个 CVE 的 CVSS，预计约 {eta} 分钟，完成后刷新查看。{note}",
+    }
+
+
+async def _run_fixplans_bulk():
+    """Background task: generate fix plans for all analyzed vulns missing one."""
+    db = SessionLocal()
+    try:
+        ai_settings = get_ai_settings(db)
+        result = await generate_fix_plans_bulk(db, ai_settings)
+        print(f"Bulk fix-plan generation done: {result}")
+    except Exception as e:
+        print(f"Bulk fix-plan generation failed: {e}")
+    finally:
+        db.close()
+
+
+@router.post("/api/vulns/generate-fix-plans")
+async def trigger_fixplans(
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """API: Generate fix plans for all analyzed vulns missing one (background)."""
+    ai_settings = get_ai_settings(db)
+    if not (ai_settings.get("ai_enabled") and ai_settings.get("ai_api_key")):
+        return {"success": False, "message": "请先在设置中启用并配置 AI"}
+
+    pending = db.query(Vulnerability).join(VulnAnalysis).filter(
+        VulnAnalysis.ai_risk_summary.isnot(None),
+        VulnAnalysis.ai_fix_plan.is_(None),
+    ).count()
+    if pending == 0:
+        return {"success": True, "pending": 0,
+                "message": "没有待生成修复方案的漏洞（修复方案依赖 AI 分析，请先完成分析）"}
+
+    background_tasks.add_task(_run_fixplans_bulk)
+    eta = round(pending * 2 * 5 / 60, 1)
+    return {
+        "success": True,
+        "pending": pending,
+        "message": f"已在后台为 {pending} 个漏洞生成修复方案（每个约 2 次 AI 调用），预计约 {eta} 分钟，完成后刷新查看。",
     }
 
 

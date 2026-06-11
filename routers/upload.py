@@ -29,12 +29,16 @@ async def _run_ai_analysis(auto_fix_plan: bool = False):
     db = SessionLocal()
     try:
         ai_settings = get_ai_settings(db)
-        await analyze_vulnerabilities(db, ai_settings)
+        ar = await analyze_vulnerabilities(db, ai_settings)
+        print(f"[auto] analyze done: {ar}")
         if auto_fix_plan:
             # Fix plans depend on analysis existing first, so run after.
-            await generate_fix_plans_bulk(db, ai_settings)
-    except Exception:
-        pass
+            fr = await generate_fix_plans_bulk(db, ai_settings)
+            print(f"[auto] fix plans done: {fr}")
+    except Exception as e:
+        import traceback
+        print(f"[auto] AI task failed: {e}")
+        traceback.print_exc()
     finally:
         db.close()
 
