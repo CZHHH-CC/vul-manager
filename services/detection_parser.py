@@ -75,10 +75,14 @@ def parse_detection_logic(text: str | None) -> list[dict]:
         for m in re.finditer(r"value:\s*\[([^\]]*)\]", chunk):
             _add(version=m.group(1))
 
-        # "version of X is less than Y"
-        ver_match = re.search(r"version of\s+(.+?)\s+is\s+(?:less than|greater than)\s+([\d:\.\-\w]+?)(?:\s*(?:Evidence|Checks|Required|Found|✓|▶)|$)", chunk)
+        # "version of X is {>= / < / ==} Y" : capture the component NAME only.
+        # The real installed version is the "Found version:" evidence, NOT the
+        # comparison bound (which is the affected-range boundary / fix threshold).
+        ver_match = re.search(r"version of\s+(.+?)\s+is\s+(?:greater than|less than|equal)", chunk, re.IGNORECASE)
         if ver_match:
-            _add(name=ver_match.group(1).strip(), version=ver_match.group(2))
+            comp_name = ver_match.group(1).strip()
+            found_ver = re.search(r"(?:Found\s+)?(?:product_)?version:\s*([\d][\d.\-\w:]*)", chunk)
+            _add(name=comp_name, version=(found_ver.group(1) if found_ver else ""))
 
         # "Check if X is installed" + found
         if "Item was found" in chunk or "✓ true" in chunk:
@@ -174,13 +178,17 @@ def cross_validate_components(ai_components: list[dict] | None,
                "path": a.get("path"), "source": "ai"}
         if match_idx is not None:
             used.add(match_idx)
-            rv = _ver_core(regex[match_idx].get("version"))
+            regex_ver_raw = regex[match_idx].get("version")
+            rv = _ver_core(regex_ver_raw)
             row["source"] = "both"
             if av and rv and not (av in rv or rv in av):
                 row["check"] = "版本差异"
-                row["regex_version"] = regex[match_idx].get("version")
+                row["regex_version"] = regex_ver_raw
                 diff += 1
             else:
+                # If AI didn't capture a version but regex did, backfill it for display
+                if not av and regex_ver_raw:
+                    row["version"] = regex_ver_raw
                 row["check"] = "一致"
                 agree += 1
         else:

@@ -39,14 +39,15 @@ CVSS向量: {cvss_vector}
    - 信息不足以确定具体版本时，如实说明"需进一步确认 XX"，不要编造
 4. "detected_components": 从"检测逻辑原文"中提取被检测到的组件列表，每个组件包含:
    - "name": 组件/软件名称（如 "Google Chrome", "kernel", "activemq"）
-   - "version": 检测到的版本号（如 "144.0.7559.110"），没有则留空字符串
+   - "version": 组件【实际安装的版本号】——必须取扫描器实测值，即 "Found version:" / "product_version:" / "version:" / "value:" 后面的那个版本；【绝对不要】把比较条件中的边界版本当作已安装版本（如 "is greater than or equal to 14.0.3006.16"、"is less than 14.0.3520.4" 中的 14.0.3006.16/14.0.3520.4 都是区间边界，不是已安装版本）。没有实测版本则留空字符串
    - "path": 文件路径、注册表路径或包名（如 "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"），没有则留空字符串
 
 5. "os_version": 从漏洞描述和检测逻辑中提取操作系统版本信息（如 "Ubuntu 22.04", "Windows Server 2019", "RHEL 9.2"），无法确定则留空字符串
 
 提取规则:
 - 只提取实际检测到的组件，忽略检测条件描述
-- 版本号只保留数字和点，去掉 "version:" 等前缀
+- 版本号取 "Found version:" 等实测值，不要取 "greater than / less than" 后的边界值
+- 同一组件可能在多个检查中出现，只输出一条，版本用实测的 "Found version:"
 - 如果原文为空或无意义，detected_components 返回空数组 []
 
 评分参考:
@@ -203,7 +204,7 @@ def get_description_summary(raw_desc: str, max_len: int = 500) -> str:
 def _build_user_prompt(vuln: Vulnerability, analysis) -> str:
     """Build the user prompt for AI analysis."""
     desc_summary = get_description_summary(vuln.raw_description)
-    detection_logic = (analysis.detection_logic[:800] if analysis and analysis.detection_logic else "N/A")
+    detection_logic = (analysis.detection_logic[:2000] if analysis and analysis.detection_logic else "N/A")
     os_version = (analysis.os_version if analysis and analysis.os_version else "") \
         or extract_os_version(vuln.raw_description) or "N/A"
     fix_threshold = extract_fix_threshold(analysis.detection_logic) if analysis else None
