@@ -601,7 +601,7 @@ async def generate_fix_plans_bulk(db: Session, ai_settings: dict,
 
     generated = 0
     errors = 0
-    semaphore = asyncio.Semaphore(3)  # fix plans are heavy; keep concurrency low
+    semaphore = asyncio.Semaphore(6)  # fix plans are heavy; cap concurrency (mind provider rate limits)
 
     async def _one(vuln):
         nonlocal generated, errors
