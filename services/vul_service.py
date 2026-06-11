@@ -135,6 +135,7 @@ def get_vuln_list(
     hostname: Optional[str] = None,
     server_class: Optional[str] = None,
     ai_status: Optional[str] = None,
+    fix_plan_status: Optional[str] = None,
     assignment_group: Optional[str] = None,
     search: Optional[str] = None,
     sort_by: str = "severity_level",
@@ -169,6 +170,12 @@ def get_vuln_list(
                 (VulnAnalysis.id.is_(None)) |
                 (VulnAnalysis.ai_risk_summary.is_(None) & VulnAnalysis.ai_fix_priority.is_(None))
             )
+    if fix_plan_status:
+        # Use EXISTS (relationship.has) so it composes with ai_status' join
+        if fix_plan_status == "done":
+            query = query.filter(Vulnerability.analysis.has(VulnAnalysis.ai_fix_plan.isnot(None)))
+        elif fix_plan_status == "pending":
+            query = query.filter(~Vulnerability.analysis.has(VulnAnalysis.ai_fix_plan.isnot(None)))
     if assignment_group:
         query = query.filter(Vulnerability.assignment_group.ilike(f"%{assignment_group}%"))
     if search:
