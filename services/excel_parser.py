@@ -188,12 +188,19 @@ def extract_detection_logic(html: str) -> str | None:
                     return t
             break
 
-    # Fallback: take the text following the "Detection Logic" marker
+    # Fallback 1: take the text following the "Detection Logic" marker
     text = soup.get_text(" ", strip=True)
     idx = text.find("Detection Logic")
     if idx >= 0:
         chunk = text[idx:idx + 2500].strip()
         return chunk or None
+
+    # Fallback 2: no "Detection Logic" header, but the evidence block is present
+    # (CrowdStrike Spotlight checks). Anchor on the evidence itself.
+    for anchor in ["Title: Check if", "filepath:", "package:", "registry_item"]:
+        j = text.find(anchor)
+        if j >= 0:
+            return text[j:j + 2500].strip() or None
     return None
 
 
