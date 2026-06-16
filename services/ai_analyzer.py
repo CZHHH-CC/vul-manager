@@ -467,11 +467,40 @@ async def generate_fix_plan(vuln: Vulnerability, ai_settings: dict) -> Optional[
 
             if content:
                 result = _parse_ai_response(content)
-                return _apply_fix_threshold(result, fix_threshold)
+                result = _apply_fix_threshold(result, fix_threshold)
+                result = _sanitize_unverifiable_versions(result, fix_threshold)
+                return result
         return None
     except Exception as e:
         print(f"Fix plan generation failed for {vuln.vit_number}: {e}")
         return None
+
+
+import re as _re
+_DISTRO_RE = _re.compile(r"(~dfsg|[-+~]?ubuntu\d|\.el\d|[-+]deb\d|\.fc\d|\.amd64|\.x86_64|\.noarch|\.aarch64)", _re.I)
+
+
+def _sanitize_unverifiable_versions(plan: Optional[dict], fix_threshold: Optional[str]) -> Optional[dict]:
+    """When the scanner gives NO fix threshold, don't let the AI assert a concrete
+    fixed version it can't verify. Force '待确认' for:
+      - components with no installed-version evidence (can't confirm affected/target)
+      - distro-packaged software (fix comes from the distro advisory, not an upstream version)
+    Components with a clear non-distro current version (e.g. Tomcat 9.0) keep the AI's answer.
+    """
+    if not plan or fix_threshold or plan.get("plan_type") != "upgrade":
+        return plan
+    for c in plan.get("components", []):
+        cur = (c.get("current_version") or "").strip()
+        path = c.get("path") or ""
+        has_cur = any(ch.isdigit() for ch in cur)
+        is_distro = bool(_DISTRO_RE.search(path) or _DISTRO_RE.search(cur))
+        if not has_cur:
+            c["affected"] = "待确认"
+            c["affected_reason"] = "该工单未提供本机实测版本/证据，无法确认是否受影响，需登录主机核对并参见厂商安全公告"
+            c["fixed_version"] = "待确认（登录主机确认版本，参见厂商安全公告）"
+        elif is_distro and "待确认" not in (c.get("fixed_version") or ""):
+            c["fixed_version"] = "待确认（执行系统更新 apt/yum 获取修复版本，参见发行版安全公告 USN/RHSA）"
+    return plan
 
 
 def _apply_fix_threshold(plan: Optional[dict], fix_threshold: Optional[str]) -> Optional[dict]:

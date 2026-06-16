@@ -266,9 +266,16 @@ def parse_excel_to_records(filepath: str) -> list[dict]:
         else:
             updated_at = None
 
+        # CVE: prefer the Vulnerability column; fall back to short_description
+        cve_id = str(row.get("Vulnerability", "")).strip()
+        short_desc = str(row.get("Short description", "")).strip()
+        if not cve_id or cve_id.lower() == "nan":
+            m = re.search(r"CVE-\d{4}-\d{4,7}", short_desc, re.I)
+            cve_id = m.group(0).upper() if m else (cve_id if cve_id.lower() != "nan" else "")
+
         record = {
             "vit_number": vit_number,
-            "cve_id": str(row.get("Vulnerability", "")).strip(),
+            "cve_id": cve_id,
             "hostname": str(row.get("CI Name / Application Service", "")).strip(),
             "ip_address": desc_data.get("ip_address"),
             "server_class": str(row.get("Class", "")).strip(),
