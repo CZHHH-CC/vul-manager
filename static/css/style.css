@@ -1,38 +1,41 @@
-/* ──────────────────────────────────────────────────────────
-   shadcn/ui — new-york style, neutral base theme
-   Tokens taken from shadcn-ui/ui (apps/v4/app/globals.css),
-   oklch values converted to hex for Tailwind Play CDN v3.
-   ────────────────────────────────────────────────────────── */
+/* Astryx-inspired console theme.
+   Astryx itself is React-first; this project keeps FastAPI/Jinja2 and maps the
+   visual language to static CSS tokens/components instead of migrating runtime. */
 :root {
-  --radius: 0.625rem;
+  --radius: 0.875rem;
 
-  --background: #ffffff;
-  --foreground: #0a0a0a;
+  --background: #f7f9fc;
+  --foreground: #111827;
 
   --card: #ffffff;
-  --card-foreground: #0a0a0a;
+  --card-foreground: #111827;
 
   --popover: #ffffff;
-  --popover-foreground: #0a0a0a;
+  --popover-foreground: #111827;
 
-  --primary: #171717;            /* neutral-900 */
-  --primary-foreground: #fafafa;
+  --primary: #155eef;
+  --primary-foreground: #ffffff;
 
-  --secondary: #f5f5f5;          /* neutral-100 */
-  --secondary-foreground: #171717;
+  --secondary: #eef4ff;
+  --secondary-foreground: #193b68;
 
-  --muted: #f5f5f5;
-  --muted-foreground: #737373;   /* neutral-500 */
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
 
-  --accent: #f5f5f5;
-  --accent-foreground: #171717;
+  --accent: #e8f1ff;
+  --accent-foreground: #155eef;
 
-  --destructive: #dc2626;        /* red-600 */
-  --destructive-foreground: #fafafa;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
 
-  --border: #e5e5e5;             /* neutral-200 */
-  --input: #e5e5e5;
-  --ring: #a3a3a3;               /* neutral-400 */
+  --border: #d9e2ef;
+  --input: #cbd7e7;
+  --ring: #6ea8ff;
+
+  --surface: #ffffff;
+  --surface-raised: #fbfdff;
+  --nav: rgba(255, 255, 255, 0.88);
+  --shadow-soft: 0 1px 2px rgba(15, 23, 42, 0.04), 0 10px 30px rgba(15, 23, 42, 0.05);
 }
 
 * { border-color: var(--border); }
@@ -41,7 +44,9 @@
 html { -webkit-text-size-adjust: 100%; }
 
 body {
-  background-color: var(--background);
+  background:
+    radial-gradient(circle at top left, rgba(21, 94, 239, 0.08), transparent 34rem),
+    linear-gradient(180deg, #fbfdff 0%, var(--background) 18rem);
   color: var(--foreground);
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI",
                "Microsoft YaHei", Roboto, Helvetica, Arial, sans-serif;
@@ -49,31 +54,32 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-/* shadcn / Geist headings are tight */
-h1, h2, h3, h4, .tracking-tightish { letter-spacing: -0.015em; }
+h1, h2, h3, h4, .tracking-tightish { letter-spacing: -0.012em; }
 
 code, .font-mono {
   font-family: ui-monospace, "SF Mono", "Cascadia Code", "Consolas", monospace;
 }
 
-/* Subtle scrollbar (matches the muted neutral look) */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 9999px; }
-::-webkit-scrollbar-thumb:hover { background: var(--ring); }
+::-webkit-scrollbar-thumb { background: #c6d3e3; border-radius: 9999px; }
+::-webkit-scrollbar-thumb:hover { background: #9fb3ca; }
 
-/* Animations */
-@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
 .fade-in { animation: fadeIn .2s ease both; }
 
-/* Accordion (settings guide) */
 .accordion-content { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .25s ease; }
 .accordion-content.open { grid-template-rows: 1fr; }
 .accordion-content > div { overflow: hidden; }
 
-/* Drag-over state on upload drop zone */
-.drop-zone-active { border-color: var(--foreground) !important; background: var(--secondary) !important; }
+.drop-zone-active { border-color: var(--primary) !important; background: var(--secondary) !important; }
 
-/* Thin progress bar */
 .progress-track { background: var(--secondary); border-radius: 9999px; overflow: hidden; }
 .progress-fill  { background: var(--primary); height: 100%; transition: width .3s ease; }
+
+.astryx-glow {
+  box-shadow: 0 0 0 1px rgba(21, 94, 239, 0.12), 0 18px 50px rgba(21, 94, 239, 0.12);
+}

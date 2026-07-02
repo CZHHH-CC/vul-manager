@@ -13,18 +13,18 @@
 <body class="min-h-screen bg-background text-foreground">
 
   <!-- ── Top navigation ── -->
-  <header class="sticky top-0 z-40 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-    <div class="mx-auto max-w-[1400px] px-6 h-14 flex items-center gap-6">
+  <header class="sticky top-0 z-40 w-full border-b border-border bg-white/85 backdrop-blur-xl supports-[backdrop-filter]:bg-white/75">
+    <div class="mx-auto max-w-[1440px] px-6 h-16 flex items-center gap-6">
 
       <!-- Brand -->
       <a href="/" class="flex items-center gap-2 font-semibold tracking-tightish">
-        <span class="grid h-6 w-6 place-items-center rounded-md bg-primary text-primary-foreground">
+        <span class="grid h-8 w-8 place-items-center rounded-xl bg-primary text-primary-foreground astryx-glow">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
                stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/>
           </svg>
         </span>
-        <span class="text-sm">漏洞管理系统</span>
+        <span class="text-sm text-slate-950">漏洞管理系统</span>
       </a>
 
       <!-- Primary nav -->
@@ -54,11 +54,11 @@
   </header>
 
   <!-- ── Page body ── -->
-  <main class="mx-auto max-w-[1400px] px-6 py-8">
+  <main class="mx-auto max-w-[1440px] px-6 py-8">
     {% block content %}{% endblock %}
   </main>
 
-  <footer class="mx-auto max-w-[1400px] px-6 py-6 border-t border-border mt-4">
+  <footer class="mx-auto max-w-[1440px] px-6 py-6 border-t border-border mt-4">
     <p class="text-xs text-muted-foreground">漏洞管理系统 v1.0 · 数据更新时间: {{ now if now else 'N/A' }}</p>
   </footer>
 
