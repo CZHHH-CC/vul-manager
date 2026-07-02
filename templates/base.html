@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-lang="zh">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -37,6 +37,9 @@
 
       <!-- Right actions -->
       <div class="ml-auto flex items-center gap-2">
+        <button type="button" id="langToggle" class="btn btn-outline btn-sm" aria-label="Switch language">
+          EN
+        </button>
         <a href="/api/reports/export" target="_blank" class="navlink">导出报告</a>
         <a href="/settings" class="btn btn-outline btn-sm {% if '/settings' in request.url.path %}!bg-accent{% endif %}">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -60,6 +63,7 @@
   </footer>
 
   <script src="/static/js/chart.umd.min.js"></script>
+  <script src="/static/js/i18n.js"></script>
   {% block extra_js %}{% endblock %}
 </body>
 </html>
