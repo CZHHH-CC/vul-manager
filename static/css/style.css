@@ -1,41 +1,40 @@
-/* Astryx-inspired console theme.
-   Astryx itself is React-first; this project keeps FastAPI/Jinja2 and maps the
-   visual language to static CSS tokens/components instead of migrating runtime. */
+/* Claude-inspired console theme.
+   Warm canvas, ink-forward typography, clay accent, and quiet surfaces. */
 :root {
-  --radius: 0.875rem;
+  --radius: 0.75rem;
 
-  --background: #f7f9fc;
-  --foreground: #111827;
+  --background: #f7f3ea;
+  --foreground: #231f1b;
 
-  --card: #ffffff;
-  --card-foreground: #111827;
+  --card: #fffdf8;
+  --card-foreground: #231f1b;
 
-  --popover: #ffffff;
-  --popover-foreground: #111827;
+  --popover: #fffdf8;
+  --popover-foreground: #231f1b;
 
-  --primary: #155eef;
+  --primary: #c15f3c;
   --primary-foreground: #ffffff;
 
-  --secondary: #eef4ff;
-  --secondary-foreground: #193b68;
+  --secondary: #eee4d4;
+  --secondary-foreground: #3f342b;
 
-  --muted: #f1f5f9;
-  --muted-foreground: #64748b;
+  --muted: #efe8dc;
+  --muted-foreground: #75685b;
 
-  --accent: #e8f1ff;
-  --accent-foreground: #155eef;
+  --accent: #f3e4d8;
+  --accent-foreground: #9a4b2f;
 
-  --destructive: #dc2626;
+  --destructive: #b42318;
   --destructive-foreground: #ffffff;
 
-  --border: #d9e2ef;
-  --input: #cbd7e7;
-  --ring: #6ea8ff;
+  --border: #dfd2c2;
+  --input: #d2c4b3;
+  --ring: #d97757;
 
-  --surface: #ffffff;
-  --surface-raised: #fbfdff;
-  --nav: rgba(255, 255, 255, 0.88);
-  --shadow-soft: 0 1px 2px rgba(15, 23, 42, 0.04), 0 10px 30px rgba(15, 23, 42, 0.05);
+  --surface: #fffdf8;
+  --surface-raised: #fbf7ef;
+  --nav: rgba(255, 253, 248, 0.9);
+  --shadow-soft: 0 1px 2px rgba(35, 31, 27, 0.04), 0 12px 34px rgba(88, 64, 43, 0.08);
 }
 
 * { border-color: var(--border); }
@@ -45,8 +44,8 @@ html { -webkit-text-size-adjust: 100%; }
 
 body {
   background:
-    radial-gradient(circle at top left, rgba(21, 94, 239, 0.08), transparent 34rem),
-    linear-gradient(180deg, #fbfdff 0%, var(--background) 18rem);
+    radial-gradient(circle at top left, rgba(193, 95, 60, 0.12), transparent 34rem),
+    linear-gradient(180deg, #fffaf1 0%, var(--background) 18rem);
   color: var(--foreground);
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI",
                "Microsoft YaHei", Roboto, Helvetica, Arial, sans-serif;
@@ -62,8 +61,8 @@ code, .font-mono {
 
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #c6d3e3; border-radius: 9999px; }
-::-webkit-scrollbar-thumb:hover { background: #9fb3ca; }
+::-webkit-scrollbar-thumb { background: #d2c4b3; border-radius: 9999px; }
+::-webkit-scrollbar-thumb:hover { background: #b8a691; }
 
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(4px); }
@@ -80,6 +79,6 @@ code, .font-mono {
 .progress-track { background: var(--secondary); border-radius: 9999px; overflow: hidden; }
 .progress-fill  { background: var(--primary); height: 100%; transition: width .3s ease; }
 
-.astryx-glow {
-  box-shadow: 0 0 0 1px rgba(21, 94, 239, 0.12), 0 18px 50px rgba(21, 94, 239, 0.12);
+.brand-glow {
+  box-shadow: 0 0 0 1px rgba(193, 95, 60, 0.16), 0 18px 50px rgba(193, 95, 60, 0.16);
 }

@@ -148,7 +148,9 @@
               <td class="tbl-td"><input type="checkbox" class="row-cb rounded border-border" value="{{ vuln.vit_number }}" onchange="updateSelection()"></td>
               <td class="tbl-td"><a href="/vulns/{{ vuln.vit_number }}" class="font-medium hover:underline">{{ vuln.vit_number }}</a></td>
               <td class="tbl-td"><code>{{ vuln.cve_id }}</code></td>
-              <td class="tbl-td text-muted-foreground max-w-[140px] truncate">{{ vuln.hostname }}</td>
+              <td class="tbl-td text-muted-foreground max-w-[140px] truncate">
+                <span class="cursor-help underline decoration-dotted decoration-stone-300 underline-offset-4" title="{{ vuln.hostname or 'N/A' }}">{{ vuln.hostname or 'N/A' }}</span>
+              </td>
               <td class="tbl-td text-muted-foreground text-xs">{{ vuln.server_class }}</td>
               <td class="tbl-td">
                 {% if 'Critical' in (vuln.severity or '') %}<span class="badge badge-destructive">{{ vuln.severity }}</span>

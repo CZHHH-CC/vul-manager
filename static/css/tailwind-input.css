@@ -24,10 +24,10 @@
     @apply bg-primary text-primary-foreground shadow-sm hover:-translate-y-px hover:shadow-md;
   }
   .btn-outline {
-    @apply border border-border bg-white/85 text-foreground shadow-xs hover:border-blue-200 hover:bg-accent hover:text-accent-foreground;
+    @apply border border-border bg-white/75 text-foreground shadow-xs hover:border-orange-200 hover:bg-accent hover:text-accent-foreground;
   }
   .btn-secondary {
-    @apply bg-secondary text-secondary-foreground shadow-xs hover:bg-blue-100;
+    @apply bg-secondary text-secondary-foreground shadow-xs hover:bg-orange-100;
   }
   .btn-ghost {
     @apply hover:bg-accent hover:text-accent-foreground;
@@ -45,12 +45,12 @@
            border border-transparent px-2 py-0.5 text-xs font-semibold whitespace-nowrap;
   }
   .badge-default { @apply bg-primary text-primary-foreground; }
-  .badge-secondary { @apply bg-slate-100 text-slate-700 ring-1 ring-inset ring-slate-200; }
-  .badge-outline { @apply border-border bg-white text-foreground; }
+  .badge-secondary { @apply bg-stone-100 text-stone-700 ring-1 ring-inset ring-stone-200; }
+  .badge-outline { @apply border-border bg-white/80 text-foreground; }
   .badge-destructive { @apply bg-red-600 text-white; }
   .badge-orange { @apply bg-orange-50 text-orange-700 ring-1 ring-inset ring-orange-200; }
   .badge-amber { @apply bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200; }
-  .badge-blue { @apply bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-200; }
+  .badge-blue { @apply bg-orange-50 text-orange-700 ring-1 ring-inset ring-orange-200; }
   .badge-sky { @apply bg-sky-50 text-sky-700 ring-1 ring-inset ring-sky-200; }
   .badge-emerald { @apply bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200; }
 
@@ -64,18 +64,18 @@
     box-shadow: var(--shadow-soft);
   }
   .card-hd { @apply flex items-center justify-between px-6 pt-5 pb-3; }
-  .card-title { @apply text-sm font-semibold leading-none text-slate-900; letter-spacing: -0.012em; }
+  .card-title { @apply text-sm font-semibold leading-none text-foreground; letter-spacing: -0.012em; }
   .card-body { @apply px-6 pb-5; }
 
   /* Form controls */
   .form-input {
     @apply h-9 w-full rounded-lg border border-input bg-white/90 px-3 py-1 text-sm shadow-xs
            outline-none transition-all placeholder:text-muted-foreground
-           focus-visible:border-blue-300 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50;
+           focus-visible:border-orange-300 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50;
   }
   .form-select {
     @apply h-9 w-full rounded-lg border border-input bg-white/90 px-3 py-1 text-sm shadow-xs
-           outline-none transition-all focus-visible:border-blue-300 focus-visible:ring-2 focus-visible:ring-ring;
+           outline-none transition-all focus-visible:border-orange-300 focus-visible:ring-2 focus-visible:ring-ring;
   }
   .form-label { @apply text-sm font-semibold leading-none mb-2 block; }
 
@@ -85,19 +85,19 @@
   }
   .tbl-td { @apply px-4 py-3 align-middle text-sm; }
   .tbl-row {
-    @apply border-b border-border transition-colors hover:bg-blue-50/60;
+    @apply border-b border-border transition-colors hover:bg-orange-50/50;
   }
 
   /* Alerts */
   .alert { @apply rounded-xl border px-4 py-3 text-sm shadow-xs; }
-  .alert-info { @apply border-blue-200 bg-blue-50 text-blue-800; }
+  .alert-info { @apply border-orange-200 bg-orange-50 text-orange-800; }
   .alert-warn { @apply border-amber-200 bg-amber-50 text-amber-800; }
   .alert-ok { @apply border-emerald-200 bg-emerald-50 text-emerald-800; }
   .alert-error { @apply border-red-200 bg-red-50 text-red-700; }
 
   /* Page hero */
   .hero-title {
-    @apply text-3xl font-semibold text-slate-950;
+    @apply text-3xl font-semibold text-foreground;
     letter-spacing: -0.025em;
   }
   .hero-sub { @apply text-sm text-muted-foreground mt-1.5; }

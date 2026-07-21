@@ -34,7 +34,7 @@
 <div class="grid grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
   {% set pills = [
     ('高危', stats.high, 'text-orange-600'),
-    ('待修复', stats.open, 'text-blue-600'),
+    ('待修复', stats.open, 'text-orange-600'),
     ('已修复', stats.closed, 'text-emerald-600'),
     ('处理中', stats.in_progress, 'text-sky-600'),
     ('受影响主机', stats.hosts_affected, ''),
@@ -142,25 +142,25 @@
 Chart.defaults.font.family = "ui-sans-serif, system-ui, 'Segoe UI', 'Microsoft YaHei', sans-serif";
 Chart.defaults.color = '#737373';
 const D = { responsive:true, plugins:{ legend:{ position:'bottom', labels:{ boxWidth:8, boxHeight:8, padding:14, usePointStyle:true } } } };
-/* shadcn chart palette = blue scale; severity keeps semantic colors */
+/* Claude-inspired warm chart palette; severity keeps semantic colors */
 const SEV = ['#dc2626','#f97316','#f59e0b','#a3a3a3'];
-const BLUE = ['#93c5fd','#3b82f6','#2563eb','#1d4ed8','#1e40af'];
+const CLAUDE = ['#f2c6ac','#d97757','#c15f3c','#9a4b2f','#75685b'];
 
 new Chart(severityChart,{type:'doughnut',data:{labels:{{ severity_dist|map(attribute='severity')|list|tojson }},
   datasets:[{data:{{ severity_dist|map(attribute='count')|list|tojson }},backgroundColor:SEV,borderWidth:0}]},
   options:{...D,cutout:'64%'}});
 
 new Chart(classChart,{type:'bar',data:{labels:{{ class_dist|map(attribute='class')|list|tojson }},
-  datasets:[{data:{{ class_dist|map(attribute='count')|list|tojson }},backgroundColor:'#2563eb',borderRadius:6,borderWidth:0,maxBarThickness:48}]},
+  datasets:[{data:{{ class_dist|map(attribute='count')|list|tojson }},backgroundColor:'#c15f3c',borderRadius:6,borderWidth:0,maxBarThickness:48}]},
   options:{...D,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,grid:{color:'#f5f5f5'},border:{display:false}},x:{grid:{display:false},border:{display:false}}}}});
 
 new Chart(stateChart,{type:'doughnut',data:{labels:{{ state_dist|map(attribute='state')|list|tojson }},
-  datasets:[{data:{{ state_dist|map(attribute='count')|list|tojson }},backgroundColor:BLUE,borderWidth:0}]},
+  datasets:[{data:{{ state_dist|map(attribute='count')|list|tojson }},backgroundColor:CLAUDE,borderWidth:0}]},
   options:{...D,cutout:'64%'}});
 
 new Chart(trendChart,{type:'line',data:{labels:{{ trends|map(attribute='week')|list|tojson }},
   datasets:[
-    {label:'总计',data:{{ trends|map(attribute='count')|list|tojson }},borderColor:'#2563eb',backgroundColor:'rgba(37,99,235,.08)',fill:true,tension:.4,pointRadius:0,borderWidth:2},
+    {label:'总计',data:{{ trends|map(attribute='count')|list|tojson }},borderColor:'#c15f3c',backgroundColor:'rgba(193,95,60,.10)',fill:true,tension:.4,pointRadius:0,borderWidth:2},
     {label:'严重',data:{{ trends|map(attribute='critical')|list|tojson }},borderColor:'#dc2626',backgroundColor:'rgba(220,38,38,.06)',fill:true,tension:.4,pointRadius:0,borderWidth:2},
     {label:'高危',data:{{ trends|map(attribute='high')|list|tojson }},borderColor:'#f97316',backgroundColor:'rgba(249,115,22,.06)',fill:true,tension:.4,pointRadius:0,borderWidth:2}
   ]},
