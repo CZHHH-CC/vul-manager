@@ -56,3 +56,7 @@ test_*
 # Documentation
 *.md
 LICENSE
+
+# Generated presentation artifacts and local tooling
+outputs
+scripts

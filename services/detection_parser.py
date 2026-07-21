@@ -32,7 +32,9 @@ def parse_detection_logic(text: str | None) -> list[dict]:
     seen = set()
 
     def _add(name="", version="", path=""):
-        name = name.strip().strip("the ")
+        name = name.strip()
+        if name.lower().startswith("the "):
+            name = name[4:].strip()
         version = version.strip()
         path = path.strip()
         version = re.sub(r"^\d+:", "", version)
@@ -45,6 +47,36 @@ def parse_detection_logic(text: str | None) -> list[dict]:
         chunk = chunk.strip()
         if not chunk:
             continue
+
+        # Version checks often arrive without separators, for example:
+        # Foundproduct_version: 1.2product_version: 1.3Evidencefilepath: Afilepath: B
+        # Pair values and paths by their scanner order before generic extraction.
+        version_check = re.search(
+            r"version of\s+(.+?)\s+is\s+(?:greater than|less than|equal)",
+            chunk,
+            re.IGNORECASE,
+        )
+        if version_check and re.search(r"Found.*?(?:product_)?version:", chunk, re.IGNORECASE):
+            component_name = version_check.group(1).strip()
+            versions = re.findall(
+                r"(?:product_)?version:\s*([0-9][0-9A-Za-z._:+~\-]*?)(?=\s*(?:(?:product_)?version:|Evidence|filepath:|$))",
+                chunk,
+                re.IGNORECASE,
+            )
+            evidence = re.split(r"Evidence", chunk, maxsplit=1, flags=re.IGNORECASE)
+            evidence_text = evidence[1] if len(evidence) > 1 else chunk
+            paths = re.findall(
+                r"filepath:\s*(.*?)(?=filepath:|(?:product_)?version:|$)",
+                evidence_text,
+                re.IGNORECASE,
+            )
+            if versions or paths:
+                count = max(len(versions), len(paths))
+                for index in range(count):
+                    version = versions[index] if index < len(versions) else ""
+                    path = paths[index] if index < len(paths) else ""
+                    _add(name=component_name, version=version, path=path)
+                continue
 
         # filepath
         for m in re.finditer(r"filepath:\s*(.+?)(?=✓|▶|$)", chunk):
@@ -135,6 +167,89 @@ def _ver_core(s: str) -> str:
     return re.sub(r"[^\d.]", "", str(s or ""))
 
 
+def _name_tokens(value: str) -> set[str]:
+    stop = {"the", "microsoft", "apache", "software", "server", "client", "exe"}
+    return {
+        token for token in re.findall(r"[a-z0-9]+", (value or "").lower())
+        if len(token) > 2 and token not in stop
+    }
+
+
+def _names_related(left: str, right: str) -> bool:
+    left_norm, right_norm = _norm_name(left), _norm_name(right)
+    if left_norm and right_norm and (left_norm in right_norm or right_norm in left_norm):
+        return True
+    return bool(_name_tokens(left) & _name_tokens(right))
+
+
+def merge_grounded_components(ai_components: list[dict] | None,
+                              regex_components: list[dict] | None) -> list[dict]:
+    """Merge AI extraction with concrete scanner evidence.
+
+    Regex-only rows are accepted only when both installed version and path are
+    present, and (when AI data exists) the component name is related to an AI
+    component. This keeps scanner evidence while excluding weak regex noise.
+    """
+    ai = [
+        {
+            "name": (item.get("name") or "").strip(),
+            "version": (item.get("version") or "").strip(),
+            "path": (item.get("path") or "").strip(),
+        }
+        for item in (ai_components or [])
+        if isinstance(item, dict)
+    ]
+    regex = [
+        {
+            "name": (item.get("name") or "").strip(),
+            "version": (item.get("version") or "").strip(),
+            "path": (item.get("path") or "").strip(),
+        }
+        for item in (regex_components or [])
+        if isinstance(item, dict)
+    ]
+    merged = [dict(item) for item in ai if any(item.values())]
+
+    for evidence in regex:
+        if not (evidence["version"] and evidence["path"]):
+            continue
+
+        same_path = next(
+            (item for item in merged if item["path"] and
+             _norm_name(item["path"]) == _norm_name(evidence["path"])),
+            None,
+        )
+        if same_path:
+            same_path["name"] = same_path["name"] or evidence["name"]
+            same_path["version"] = evidence["version"]
+            continue
+
+        related = next(
+            (item for item in merged if _names_related(item["name"], evidence["name"])),
+            None,
+        )
+        if ai and not related:
+            continue
+
+        merged.append({
+            "name": related["name"] if related and related["name"] else evidence["name"],
+            "version": evidence["version"],
+            "path": evidence["path"],
+        })
+
+    deduped = []
+    seen = set()
+    for item in merged:
+        key = (
+            _norm_name(item["path"]) if item["path"] else _norm_name(item["name"]),
+            _ver_core(item["version"]),
+        )
+        if key not in seen:
+            seen.add(key)
+            deduped.append(item)
+    return deduped
+
+
 def cross_validate_components(ai_components: list[dict] | None,
                              regex_components: list[dict] | None):
     """Cross-check AI-extracted components against regex-extracted ones.
@@ -162,17 +277,19 @@ def cross_validate_components(ai_components: list[dict] | None,
     for a in ai:
         an, av = _norm_name(a.get("name")), _ver_core(a.get("version"))
         match_idx = None
+        match_score = 0
         for i, r in enumerate(regex):
             if i in used:
                 continue
             rn, rv = _norm_name(r.get("name")), _ver_core(r.get("version"))
-            name_match = an and rn and (an in rn or rn in an)
+            name_match = _names_related(a.get("name"), r.get("name"))
             ver_match = av and rv and (av in rv or rv in av)
             path_match = a.get("path") and r.get("path") and (
                 _norm_name(a["path"]) in _norm_name(r["path"]) or _norm_name(r["path"]) in _norm_name(a["path"]))
-            if name_match or path_match or (not an and ver_match):
+            score = 3 if path_match else (2 if name_match and ver_match else (1 if name_match or (not an and ver_match) else 0))
+            if score > match_score:
                 match_idx = i
-                break
+                match_score = score
 
         row = {"name": a.get("name"), "version": a.get("version"),
                "path": a.get("path"), "source": "ai"}
@@ -215,34 +332,36 @@ def _split_package_version(pkg: str) -> tuple[str, str]:
 
 
 def _dedupe_items(items: list[dict]) -> list[dict]:
-    """Remove duplicate items, keeping the one with most information."""
+    """Merge compatible duplicates while preserving distinct installs."""
     # Filter out noise names
     noise = {"source linux-signed", "source linux", "source linux-lowlatency"}
     items = [i for i in items if i["name"].lower() not in noise]
 
-    # Group named items: if one name is a prefix of another, keep the longer one
     named = [i for i in items if i["name"]]
     path_only = [i for i in items if not i["name"]]
-
-    # Sort by name length descending so longer names come first
     named.sort(key=lambda x: len(x["name"]), reverse=True)
 
     kept = []
     for item in named:
-        # Check if this name is already covered by a longer name
         norm = re.sub(r"[\s\-_]+", "", item["name"].lower())
-        already_covered = False
         for existing in kept:
             existing_norm = re.sub(r"[\s\-_]+", "", existing["name"].lower())
-            if norm in existing_norm or existing_norm in norm:
-                # Keep the one with more info
-                if (bool(item["version"]) > bool(existing["version"]) or
-                    (bool(item["version"]) == bool(existing["version"]) and bool(item["path"]) > bool(existing["path"]))):
-                    kept.remove(existing)
-                else:
-                    already_covered = True
+            names_match = norm in existing_norm or existing_norm in norm
+            versions_compatible = (
+                not item["version"] or not existing["version"] or
+                _ver_core(item["version"]) == _ver_core(existing["version"])
+            )
+            paths_compatible = (
+                not item["path"] or not existing["path"] or
+                _norm_name(item["path"]) == _norm_name(existing["path"])
+            )
+            if names_match and versions_compatible and paths_compatible:
+                if len(item["name"]) > len(existing["name"]):
+                    existing["name"] = item["name"]
+                existing["version"] = existing["version"] or item["version"]
+                existing["path"] = existing["path"] or item["path"]
                 break
-        if not already_covered:
+        else:
             kept.append(item)
 
     return kept + path_only

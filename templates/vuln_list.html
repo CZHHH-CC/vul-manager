@@ -1,7 +1,69 @@
 {% extends "base.html" %}
 {% block title %}漏洞列表 - 漏洞管理系统{% endblock %}
 
+{% block extra_css %}
+<style>
+  .vuln-list-wide {
+    width: 100%;
+    margin-left: 0;
+  }
+  .vuln-list-layout { flex-direction: column; gap: 1rem; }
+  .vuln-filter-sidebar {
+    position: static;
+    width: 100%;
+    padding: 1rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--card);
+    box-shadow: var(--shadow-card);
+  }
+  .mobile-filter-toggle { display: none; }
+  .vuln-list-table {
+    min-width: 1090px;
+    table-layout: fixed;
+  }
+  .vuln-list-table .tbl-th,
+  .vuln-list-table .tbl-td {
+    padding-left: .625rem;
+    padding-right: .625rem;
+  }
+  @media (min-width: 1024px) {
+    .vuln-filter-sidebar form {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: .75rem 1rem;
+      align-items: end;
+    }
+    .vuln-filter-sidebar form > * { margin: 0 !important; }
+    .vuln-filter-sidebar form > .h-px { grid-column: 1 / -1; }
+    .vuln-filter-sidebar form > .flex { align-self: end; }
+  }
+  @media (max-width: 1023px) {
+    .vuln-list-wide {
+      width: 100%;
+      margin-left: 0;
+    }
+    .mobile-filter-toggle { display: inline-flex; margin-bottom: 1rem; }
+    .vuln-list-layout { flex-direction: column; gap: 1rem; }
+    .vuln-list-layout > .flex-1 { width: 100%; max-width: 100%; min-width: 0; }
+    .vuln-page-actions { width: 100%; flex-wrap: wrap; justify-content: flex-start; }
+    .vuln-filter-sidebar.hidden { display: none; }
+    .vuln-filter-sidebar.mobile-open {
+      display: block;
+      position: static;
+      width: 100%;
+      padding: 1rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--card);
+    }
+  }
+</style>
+{% endblock %}
+
 {% block content %}
+
+<div class="vuln-list-wide">
 
 <!-- Hero -->
 <div class="mb-6 flex items-end justify-between gap-4 flex-wrap">
@@ -9,7 +71,7 @@
     <h1 class="hero-title">漏洞列表</h1>
     <p class="hero-sub">共 {{ total }} 条漏洞工单</p>
   </div>
-  <div class="flex items-center gap-2">
+  <div class="vuln-page-actions flex items-center gap-2">
     <button class="btn btn-outline btn-sm" onclick="enrichCvss()">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>
@@ -37,14 +99,19 @@
   </div>
 </div>
 
-<div class="flex gap-8 items-start">
+<button type="button" id="mobileFilterToggle" class="mobile-filter-toggle btn btn-outline" aria-controls="vulnFilterSidebar" aria-expanded="false" onclick="toggleMobileFilters()">
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16"/><path d="M7 12h10"/><path d="M10 18h4"/></svg>
+  筛选条件
+</button>
+
+<div class="flex items-start vuln-list-layout">
 
   <!-- Left filter sidebar (marketplace style) -->
-  <aside class="w-52 shrink-0 hidden lg:block sticky top-20">
+  <aside id="vulnFilterSidebar" class="vuln-filter-sidebar shrink-0 hidden lg:block sticky top-20">
     <form id="filterForm" method="get" action="/vulns" class="space-y-5">
 
       <div>
-        <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">严重程度</p>
+        <p class="filter-label">严重程度</p>
         <select class="form-select" name="severity">
           <option value="">全部</option>
           {% for s in filters.severities %}
@@ -54,7 +121,7 @@
       </div>
 
       <div>
-        <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">状态</p>
+        <p class="filter-label">状态</p>
         <select class="form-select" name="state">
           <option value="">全部</option>
           {% for s in filters.states %}
@@ -64,7 +131,7 @@
       </div>
 
       <div>
-        <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">服务器类型</p>
+        <p class="filter-label">服务器类型</p>
         <select class="form-select" name="server_class">
           <option value="">全部</option>
           {% for c in filters.classes %}
@@ -74,7 +141,12 @@
       </div>
 
       <div>
-        <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">AI 分析</p>
+        <p class="filter-label">检测组件</p>
+        <input type="text" class="form-input" name="component" placeholder="名称 / 版本 / 路径" value="{{ current_filters.component or '' }}">
+      </div>
+
+      <div>
+        <p class="filter-label">AI 分析</p>
         <select class="form-select" name="ai_status">
           <option value="">全部</option>
           <option value="analyzed" {% if current_filters.ai_status == 'analyzed' %}selected{% endif %}>已分析</option>
@@ -84,7 +156,7 @@
       </div>
 
       <div>
-        <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">修复方案</p>
+        <p class="filter-label">修复方案</p>
         <select class="form-select" name="fix_plan_status">
           <option value="">全部</option>
           <option value="done" {% if current_filters.fix_plan_status == 'done' %}selected{% endif %}>已生成</option>
@@ -95,14 +167,13 @@
       <div class="h-px bg-border"></div>
 
       <div>
-        <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">CVE 编号</p>
+        <p class="filter-label">CVE 编号</p>
         <input type="text" class="form-input" name="cve_id" placeholder="CVE-XXXX-XXXXX" value="{{ current_filters.cve_id or '' }}">
       </div>
       <div>
-        <p class="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">主机名</p>
+        <p class="filter-label">主机名</p>
         <input type="text" class="form-input" name="hostname" placeholder="主机名" value="{{ current_filters.hostname or '' }}">
       </div>
-
       <input type="hidden" name="search" id="searchHidden" value="{{ current_filters.search or '' }}">
       <div class="flex gap-2 pt-1">
         <button type="submit" class="btn btn-default btn-sm flex-1">应用</button>
@@ -120,7 +191,7 @@
         <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
       </svg>
       <input id="searchInput" type="text" class="form-input !h-11 pl-10 text-[15px]"
-             placeholder="搜索 VIT 编号 / CVE / 描述…" value="{{ current_filters.search or '' }}"
+             placeholder="搜索 VIT 编号 / CVE / 组件 / 描述…" value="{{ current_filters.search or '' }}"
              onkeydown="if(event.key==='Enter'){submitSearch()}">
     </div>
 
@@ -135,21 +206,56 @@
 
     <div class="card overflow-hidden">
       <div class="overflow-x-auto">
-        <table class="w-full">
+        <table class="w-full vuln-list-table">
+          <colgroup>
+            <col style="width: 36px;"><col style="width: 90px;"><col style="width: 105px;">
+            <col style="width: 110px;"><col style="width: 145px;"><col style="width: 90px;">
+            <col style="width: 85px;"><col style="width: 92px;"><col style="width: 65px;">
+            <col style="width: 65px;"><col style="width: 70px;"><col style="width: 80px;">
+            <col style="width: 55px;">
+          </colgroup>
           <thead><tr class="border-b border-border bg-muted/40">
             <th class="tbl-th w-10"><input type="checkbox" id="selectAll" onchange="toggleSelectAll(this)" class="rounded border-border"></th>
-            <th class="tbl-th">VIT 编号</th><th class="tbl-th">CVE 编号</th><th class="tbl-th">主机名</th>
-            <th class="tbl-th">类型</th><th class="tbl-th">严重程度</th><th class="tbl-th">CVSS</th>
-            <th class="tbl-th">状态</th><th class="tbl-th">优先级</th><th class="tbl-th">AI 分析</th><th class="tbl-th">修复方案</th><th class="tbl-th">创建时间</th><th class="tbl-th text-right pr-4">操作</th>
+            <th class="tbl-th">VIT 编号</th><th class="tbl-th">CVE 编号</th><th class="tbl-th">主机名</th><th class="tbl-th">检测组件</th><th class="tbl-th">最新复测</th>
+            <th class="tbl-th">类型</th><th class="tbl-th">严重程度</th><th class="tbl-th">状态</th>
+            <th class="tbl-th">AI 分析</th><th class="tbl-th">修复方案</th><th class="tbl-th">创建时间</th><th class="tbl-th text-right pr-4">操作</th>
           </tr></thead>
           <tbody>
             {% for vuln in vulns %}
+            {% set meta = list_metadata.get(vuln.id) %}
             <tr class="tbl-row">
               <td class="tbl-td"><input type="checkbox" class="row-cb rounded border-border" value="{{ vuln.vit_number }}" onchange="updateSelection()"></td>
               <td class="tbl-td"><a href="/vulns/{{ vuln.vit_number }}" class="font-medium hover:underline">{{ vuln.vit_number }}</a></td>
               <td class="tbl-td"><code>{{ vuln.cve_id }}</code></td>
               <td class="tbl-td text-muted-foreground max-w-[140px] truncate">
                 <span class="cursor-help underline decoration-dotted decoration-stone-300 underline-offset-4" title="{{ vuln.hostname or 'N/A' }}">{{ vuln.hostname or 'N/A' }}</span>
+              </td>
+              <td class="tbl-td" style="max-width: 230px;">
+                {% if meta and meta.components %}
+                  {% set component = meta.components[0] %}
+                  <div class="cursor-help" title="{{ meta.component_tooltip }}">
+                    <div class="flex items-center gap-1.5 min-w-0">
+                      <span class="text-xs font-medium truncate">{{ component.name or '未知组件' }}</span>
+                      {% if meta.components|length > 1 %}<span class="badge badge-secondary">+{{ meta.components|length - 1 }}</span>{% endif %}
+                    </div>
+                    <div class="flex items-center gap-1.5 mt-0.5">
+                      <code class="text-xs truncate">{{ component.version or '版本未知' }}</code>
+                      <span class="text-xs text-muted-foreground">{{ '复测' if meta.component_source == 'retest' else '初检' }}</span>
+                    </div>
+                  </div>
+                {% elif meta and meta.component_source == 'retest_closed' %}
+                  <span class="badge badge-emerald text-xs">复测未检出</span>
+                {% else %}
+                  <span class="text-xs text-muted-foreground">未识别</span>
+                {% endif %}
+              </td>
+              <td class="tbl-td text-xs" style="white-space: nowrap;">
+                {% if meta and meta.latest_retest %}
+                  <div class="font-medium">{{ meta.latest_retest.retested_at.strftime('%Y-%m-%d') }}</div>
+                  <div class="text-muted-foreground mt-0.5">{{ meta.latest_retest.retested_at.strftime('%H:%M:%S') }}</div>
+                {% else %}
+                  <span class="text-muted-foreground">未复测</span>
+                {% endif %}
               </td>
               <td class="tbl-td text-muted-foreground text-xs">{{ vuln.server_class }}</td>
               <td class="tbl-td">
@@ -159,26 +265,10 @@
                 {% else %}<span class="badge badge-secondary">{{ vuln.severity }}</span>{% endif %}
               </td>
               <td class="tbl-td">
-                {% if vuln.analysis and vuln.analysis.cvss_score %}
-                  {% if vuln.analysis.cvss_score >= 9 %}<span class="font-semibold text-red-600">{{ vuln.analysis.cvss_score }}</span>
-                  {% elif vuln.analysis.cvss_score >= 7 %}<span class="font-semibold text-orange-600">{{ vuln.analysis.cvss_score }}</span>
-                  {% else %}{{ vuln.analysis.cvss_score }}{% endif %}
-                {% else %}<span class="text-muted-foreground">—</span>{% endif %}
-              </td>
-              <td class="tbl-td">
                 {% if vuln.state == 'Open' %}<span class="badge badge-blue">Open</span>
                 {% elif vuln.state == 'In Progress' %}<span class="badge badge-amber">In Progress</span>
                 {% elif vuln.state in ['Closed','Resolved'] %}<span class="badge badge-emerald">{{ vuln.state }}</span>
                 {% else %}<span class="badge badge-secondary">{{ vuln.state }}</span>{% endif %}
-              </td>
-              <td class="tbl-td">
-                {% if vuln.analysis and vuln.analysis.ai_fix_priority %}
-                  {% set p = vuln.analysis.ai_fix_priority %}
-                  {% if p == 'P0' %}<span class="badge badge-destructive">P0</span>
-                  {% elif p == 'P1' %}<span class="badge badge-orange">P1</span>
-                  {% elif p == 'P2' %}<span class="badge badge-amber">P2</span>
-                  {% else %}<span class="badge badge-secondary">P3</span>{% endif %}
-                {% else %}<span class="text-muted-foreground">—</span>{% endif %}
               </td>
               <td class="tbl-td">
                 {% if vuln.analysis and vuln.analysis.ai_risk_summary %}
@@ -196,7 +286,7 @@
                   <span class="text-muted-foreground text-xs">未生成</span>
                 {% endif %}
               </td>
-              <td class="tbl-td text-xs text-muted-foreground">{{ vuln.opened_at.strftime('%Y-%m-%d') if vuln.opened_at else '—' }}</td>
+              <td class="tbl-td text-xs text-muted-foreground">{{ vuln.opened_at.strftime('%Y-%m-%d') if vuln.opened_at else '未提供' }}</td>
               <td class="tbl-td">
                 <div class="flex items-center justify-end gap-1">
                   <a href="/vulns/{{ vuln.vit_number }}" class="btn btn-ghost btn-icon !h-8 !w-8" title="详情">
@@ -246,6 +336,8 @@
   </div>
 </div>
 
+</div>
+
 <div id="toast" class="fixed bottom-5 right-5 z-50 hidden"><div id="toastContent" class="alert shadow-sm min-w-[260px]"></div></div>
 
 {% endblock %}
@@ -253,6 +345,7 @@
 {% block extra_js %}
 <script>
 function submitSearch(){ document.getElementById('searchHidden').value = document.getElementById('searchInput').value; document.getElementById('filterForm').submit(); }
+function toggleMobileFilters(){ const panel=document.getElementById('vulnFilterSidebar'),button=document.getElementById('mobileFilterToggle'); const open=panel.classList.toggle('mobile-open'); button.setAttribute('aria-expanded',open?'true':'false'); }
 function showToast(type,msg){ const t=document.getElementById('toast'),c=document.getElementById('toastContent'); c.className='alert shadow-sm min-w-[260px] alert-'+type; c.textContent=msg; t.classList.remove('hidden'); setTimeout(()=>t.classList.add('hidden'),4000); }
 function updateState(v,s){ if(!confirm(`确定将 ${v} 标记为 ${s}？`))return; fetch(`/api/vulns/${v}?state=${s}`,{method:'PATCH'}).then(r=>r.json()).then(d=>{ if(d.success)location.reload(); else showToast('error','更新失败: '+(d.error||'未知错误')); }); }
 function triggerAnalysis(){ if(!confirm('将对所有未分析的漏洞执行 AI 分析，可能需要几分钟。继续？'))return; const b=event.currentTarget; b.disabled=true; b.textContent='分析中…'; fetch('/api/vulns/analyze',{method:'POST'}).then(r=>r.json()).then(d=>{ showToast('ok',`分析完成：成功 ${d.analyzed||0} 条，失败 ${d.errors||0} 条`); setTimeout(()=>location.reload(),1500); }).catch(e=>{ showToast('error','分析请求失败: '+e); b.disabled=false; b.textContent='AI 分析'; }); }

@@ -2,8 +2,8 @@ import json
 from datetime import datetime, timedelta
 from typing import Optional
 from sqlalchemy import func, case, and_, extract
-from sqlalchemy.orm import Session
-from db.models import Vulnerability, VulnAnalysis, VulnHistory, UploadLog
+from sqlalchemy.orm import Session, joinedload
+from db.models import Vulnerability, VulnAnalysis, VulnHistory, VulnRetest, UploadLog
 
 
 # ─── Statistics ───────────────────────────────────────────────────────────────
@@ -202,6 +202,7 @@ def get_vuln_list(
     cve_id: Optional[str] = None,
     hostname: Optional[str] = None,
     server_class: Optional[str] = None,
+    component: Optional[str] = None,
     ai_status: Optional[str] = None,
     fix_plan_status: Optional[str] = None,
     assignment_group: Optional[str] = None,
@@ -214,6 +215,17 @@ def get_vuln_list(
     """Get paginated, filtered vulnerability list."""
     query = db.query(Vulnerability)
 
+    def component_matches(value: str):
+        pattern = f"%{value}%"
+        return (
+            Vulnerability.analysis.has(
+                VulnAnalysis.detected_components.ilike(pattern)
+            )
+            | Vulnerability.retests.any(
+                VulnRetest.detected_components.ilike(pattern)
+            )
+        )
+
     # Apply filters
     if severity:
         query = query.filter(Vulnerability.severity.ilike(f"%{severity}%"))
@@ -225,6 +237,8 @@ def get_vuln_list(
         query = query.filter(Vulnerability.hostname.ilike(f"%{hostname}%"))
     if server_class:
         query = query.filter(Vulnerability.server_class == server_class)
+    if component:
+        query = query.filter(component_matches(component))
     if ai_status:
         if ai_status == "analyzed":
             query = query.join(VulnAnalysis).filter(VulnAnalysis.ai_risk_summary.isnot(None))
@@ -250,7 +264,8 @@ def get_vuln_list(
         query = query.filter(
             (Vulnerability.vit_number.ilike(f"%{search}%")) |
             (Vulnerability.cve_id.ilike(f"%{search}%")) |
-            (Vulnerability.short_description.ilike(f"%{search}%"))
+            (Vulnerability.short_description.ilike(f"%{search}%")) |
+            component_matches(search)
         )
 
     # Total count
@@ -265,7 +280,7 @@ def get_vuln_list(
 
     # Pagination
     offset = (page - 1) * page_size
-    vulns = query.offset(offset).limit(page_size).all()
+    vulns = query.options(joinedload(Vulnerability.analysis)).offset(offset).limit(page_size).all()
 
     return {
         "total": total,
@@ -274,6 +289,69 @@ def get_vuln_list(
         "total_pages": (total + page_size - 1) // page_size,
         "items": vulns,
     }
+
+
+def _parse_component_json(value: Optional[str]) -> list[dict]:
+    if not value:
+        return []
+    try:
+        components = json.loads(value)
+    except (json.JSONDecodeError, TypeError):
+        return []
+    if not isinstance(components, list):
+        return []
+    return [component for component in components if isinstance(component, dict)]
+
+
+def get_vuln_list_metadata(db: Session, vulns: list[Vulnerability]) -> dict[int, dict]:
+    """Build component and latest-retest display data for one list page."""
+    vulnerability_ids = [v.id for v in vulns]
+    latest_retests = {}
+    if vulnerability_ids:
+        retests = db.query(VulnRetest).filter(
+            VulnRetest.vulnerability_id.in_(vulnerability_ids)
+        ).order_by(
+            VulnRetest.vulnerability_id.asc(),
+            VulnRetest.retested_at.desc(),
+            VulnRetest.id.desc(),
+        ).all()
+        for retest in retests:
+            latest_retests.setdefault(retest.vulnerability_id, retest)
+
+    metadata = {}
+    for vuln in vulns:
+        latest_retest = latest_retests.get(vuln.id)
+        initial_components = _parse_component_json(
+            vuln.analysis.detected_components if vuln.analysis else None
+        )
+        retest_components = _parse_component_json(
+            latest_retest.detected_components if latest_retest else None
+        )
+
+        if retest_components:
+            components = retest_components
+            component_source = "retest"
+        elif latest_retest and latest_retest.result == "closed":
+            components = []
+            component_source = "retest_closed"
+        else:
+            components = initial_components
+            component_source = "initial" if initial_components else "none"
+
+        tooltip_lines = []
+        for component in components:
+            name = (component.get("name") or "未知组件").strip()
+            version = (component.get("version") or "版本未知").strip()
+            path = (component.get("path") or "位置未知").strip()
+            tooltip_lines.append(f"{name} | {version} | {path}")
+
+        metadata[vuln.id] = {
+            "components": components,
+            "component_source": component_source,
+            "component_tooltip": "\n".join(tooltip_lines),
+            "latest_retest": latest_retest,
+        }
+    return metadata
 
 
 def get_vuln_detail(db: Session, vit_number: str) -> Optional[Vulnerability]:
@@ -310,6 +388,16 @@ def get_vuln_history(db: Session, vit_number: str) -> list[VulnHistory]:
     return db.query(VulnHistory).filter(
         VulnHistory.vulnerability_id == vuln.id
     ).order_by(VulnHistory.changed_at.desc()).all()
+
+
+def get_vuln_retests(db: Session, vit_number: str) -> list[VulnRetest]:
+    """Get scanner retest events, newest first."""
+    vuln = db.query(Vulnerability).filter(Vulnerability.vit_number == vit_number).first()
+    if not vuln:
+        return []
+    return db.query(VulnRetest).filter(
+        VulnRetest.vulnerability_id == vuln.id
+    ).order_by(VulnRetest.retested_at.desc()).all()
 
 
 # ─── Overdue Detection ───────────────────────────────────────────────────────
@@ -409,9 +497,23 @@ def export_vulns_for_report(db: Session, severity: Optional[str] = None, state: 
 
     vulns = query.order_by(Vulnerability.severity_level.asc(), Vulnerability.opened_at.asc()).all()
 
+    latest_retests = {}
+    vulnerability_ids = [v.id for v in vulns]
+    if vulnerability_ids:
+        retests = db.query(VulnRetest).filter(
+            VulnRetest.vulnerability_id.in_(vulnerability_ids)
+        ).order_by(
+            VulnRetest.vulnerability_id.asc(),
+            VulnRetest.retested_at.desc(),
+            VulnRetest.id.desc(),
+        ).all()
+        for retest in retests:
+            latest_retests.setdefault(retest.vulnerability_id, retest)
+
     result = []
     for v in vulns:
         a = v.analysis
+        latest_retest = latest_retests.get(v.id)
         result.append({
             "VIT编号": v.vit_number,
             "CVE编号": v.cve_id,
@@ -425,6 +527,14 @@ def export_vulns_for_report(db: Session, severity: Optional[str] = None, state: 
             "利用状态": a.exploit_status if a else "",
             "修复优先级": a.ai_fix_priority if a else "",
             "检测到的组件": _format_components(a.detected_components if a else None),
+            "最新复测时间": (
+                latest_retest.retested_at.strftime("%Y-%m-%d %H:%M:%S")
+                if latest_retest and latest_retest.retested_at else ""
+            ),
+            "最新复测结果": latest_retest.result if latest_retest else "",
+            "最新复测组件": _format_components(
+                latest_retest.detected_components if latest_retest else None
+            ),
             "操作指南": a.ai_remediation_guide if a and a.ai_remediation_guide else "",
             "修复方案": _format_fix_plan(a.ai_fix_plan if a else None),
             "负责团队": v.assignment_group or "",

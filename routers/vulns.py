@@ -1,3 +1,4 @@
+import json
 from typing import Optional
 from fastapi import APIRouter, Depends, Request, Query, BackgroundTasks
 from fastapi.responses import HTMLResponse
@@ -8,12 +9,12 @@ from db.database import get_db, SessionLocal
 from db.models import Vulnerability, VulnAnalysis
 from services.vul_service import (
     get_vuln_list, get_vuln_detail, update_vuln_state,
-    get_vuln_history, get_filter_options, get_overdue_vulns,
-    delete_vulns_by_numbers,
+    get_vuln_history, get_vuln_retests, get_filter_options, get_overdue_vulns,
+    delete_vulns_by_numbers, get_vuln_list_metadata,
 )
 from services.ai_analyzer import analyze_vulnerabilities, generate_and_review_fix_plan, generate_fix_plans_bulk
 from services.cve_lookup import enrich_cvss_scores, count_missing_cvss
-from services.detection_parser import parse_detection_logic, cross_validate_components
+from services.detection_parser import parse_detection_logic, cross_validate_components, merge_grounded_components
 from routers.settings import get_ai_settings
 
 router = APIRouter()
@@ -27,6 +28,8 @@ async def vuln_list_page(
     state: Optional[str] = None,
     cve_id: Optional[str] = None,
     hostname: Optional[str] = None,
+    server_class: Optional[str] = None,
+    component: Optional[str] = None,
     ai_status: Optional[str] = None,
     fix_plan_status: Optional[str] = None,
     search: Optional[str] = None,
@@ -39,11 +42,13 @@ async def vuln_list_page(
     """Render vulnerability list page."""
     result = get_vuln_list(
         db, severity=severity, state=state, cve_id=cve_id,
-        hostname=hostname, ai_status=ai_status, fix_plan_status=fix_plan_status,
+        hostname=hostname, server_class=server_class, component=component,
+        ai_status=ai_status, fix_plan_status=fix_plan_status,
         search=search,
         sort_by=sort_by, sort_order=sort_order, page=page, page_size=page_size,
     )
     filters = get_filter_options(db)
+    list_metadata = get_vuln_list_metadata(db, result["items"])
 
     return templates.TemplateResponse("vuln_list.html", {
         "request": request,
@@ -53,11 +58,14 @@ async def vuln_list_page(
         "page_size": result["page_size"],
         "total_pages": result["total_pages"],
         "filters": filters,
+        "list_metadata": list_metadata,
         "current_filters": {
             "severity": severity,
             "state": state,
             "cve_id": cve_id,
             "hostname": hostname,
+            "server_class": server_class,
+            "component": component,
             "ai_status": ai_status,
             "fix_plan_status": fix_plan_status,
             "search": search,
@@ -73,6 +81,8 @@ async def list_vulns_api(
     state: Optional[str] = None,
     cve_id: Optional[str] = None,
     hostname: Optional[str] = None,
+    server_class: Optional[str] = None,
+    component: Optional[str] = None,
     search: Optional[str] = None,
     sort_by: str = "severity_level",
     sort_order: str = "asc",
@@ -83,7 +93,8 @@ async def list_vulns_api(
     """API: List vulnerabilities with filters."""
     result = get_vuln_list(
         db, severity=severity, state=state, cve_id=cve_id,
-        hostname=hostname, search=search, sort_by=sort_by,
+        hostname=hostname, server_class=server_class, component=component,
+        search=search, sort_by=sort_by,
         sort_order=sort_order, page=page, page_size=page_size,
     )
     return {
@@ -120,23 +131,33 @@ async def vuln_detail_page(
         return templates.TemplateResponse("404.html", {"request": request}, status_code=404)
 
     history = get_vuln_history(db, vit_number)
+    retests = get_vuln_retests(db, vit_number)
+    retest_timeline = []
+    for retest in retests:
+        try:
+            components = json.loads(retest.detected_components or "[]")
+        except (json.JSONDecodeError, TypeError):
+            components = []
+        retest_timeline.append({"event": retest, "components": components})
 
     # Cross-validate AI-extracted components against regex-extracted ones
     ai_components = []
     if vuln.analysis and vuln.analysis.detected_components:
         try:
-            import json
             ai_components = json.loads(vuln.analysis.detected_components)
         except (json.JSONDecodeError, TypeError):
             ai_components = []
     regex_components = parse_detection_logic(vuln.analysis.detection_logic) if vuln.analysis else []
-    detected_components, component_check = cross_validate_components(ai_components, regex_components)
+    grounded_components = merge_grounded_components(ai_components, regex_components)
+    detected_components, component_check = cross_validate_components(grounded_components, regex_components)
+    component_check["augmented"] = max(0, len(grounded_components) - len(ai_components))
 
     return templates.TemplateResponse("vuln_detail.html", {
         "request": request,
         "vuln": vuln,
         "analysis": vuln.analysis,
         "history": history,
+        "retest_timeline": retest_timeline,
         "detected_components": detected_components,
         "component_check": component_check,
     })

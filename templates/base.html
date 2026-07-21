@@ -3,67 +3,118 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0e1117">
   <title>{% block title %}漏洞管理系统{% endblock %}</title>
 
-  <!-- Tailwind compiled to a static stylesheet at build time (no runtime JS engine, no external CDN) -->
-  <link href="/static/css/app.css" rel="stylesheet">
-  <link href="/static/css/style.css" rel="stylesheet">
+  <link href="/static/css/app.css?v=20260722" rel="stylesheet">
+  <link href="/static/css/style.css?v=graphite-20260722" rel="stylesheet">
   {% block extra_css %}{% endblock %}
 </head>
 <body class="min-h-screen bg-background text-foreground">
-
-  <!-- ── Top navigation ── -->
-  <header class="sticky top-0 z-40 w-full border-b border-border backdrop-blur-xl" style="background: var(--nav);">
-    <div class="mx-auto max-w-[1440px] px-6 h-16 flex items-center gap-6">
-
-      <!-- Brand -->
-      <a href="/" class="flex items-center gap-2 font-semibold tracking-tightish">
-        <span class="grid h-8 w-8 place-items-center rounded-xl bg-primary text-primary-foreground brand-glow">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
-               stroke-linecap="round" stroke-linejoin="round">
+  <div class="app-shell">
+    <aside class="app-sidebar" id="appSidebar" aria-label="主导航">
+      <a href="/" class="app-brand" aria-label="漏洞管理系统首页">
+        <span class="app-brand-mark" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/>
+            <path d="M9 12l2 2 4-4"/>
           </svg>
         </span>
-        <span class="text-sm text-foreground">漏洞管理系统</span>
+        <span>
+          <span class="app-brand-name">VulManager</span>
+          <span class="app-brand-sub" data-no-i18n>Security workspace</span>
+        </span>
       </a>
 
-      <!-- Primary nav -->
-      <nav class="hidden md:flex items-center gap-0.5">
-        <a href="/" class="navlink {% if request.url.path == '/' %}active{% endif %}">仪表盘</a>
-        <a href="/vulns" class="navlink {% if '/vulns' in request.url.path %}active{% endif %}">漏洞列表</a>
-        <a href="/upload" class="navlink {% if '/upload' in request.url.path %}active{% endif %}">上传数据</a>
-        <a href="/kpi" class="navlink {% if '/kpi' in request.url.path %}active{% endif %}">KPI 统计</a>
-      </nav>
+      <div class="sidebar-section">
+        <p class="sidebar-label">工作台</p>
+        <nav class="app-nav">
+          <a href="/" class="navlink {% if request.url.path == '/' %}active{% endif %}">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+            <span>仪表盘</span>
+          </a>
+          <a href="/vulns" class="navlink {% if '/vulns' in request.url.path %}active{% endif %}">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg>
+            <span>漏洞列表</span>
+          </a>
+          <a href="/kpi" class="navlink {% if '/kpi' in request.url.path %}active{% endif %}">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/></svg>
+            <span>KPI 统计</span>
+          </a>
+        </nav>
+      </div>
 
-      <!-- Right actions -->
-      <div class="ml-auto flex items-center gap-2">
-        <button type="button" id="langToggle" class="btn btn-outline btn-sm" aria-label="Switch language">
-          EN
-        </button>
-        <a href="/api/reports/export" target="_blank" class="navlink">导出报告</a>
-        <a href="/settings" class="btn btn-outline btn-sm {% if '/settings' in request.url.path %}!bg-accent{% endif %}">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-               stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
-            <circle cx="12" cy="12" r="3"/>
-          </svg>
-          设置
+      <div class="sidebar-section">
+        <p class="sidebar-label">数据管理</p>
+        <nav class="app-nav">
+          <a href="/upload" class="navlink {% if '/upload' in request.url.path %}active{% endif %}">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg>
+            <span>上传数据</span>
+          </a>
+          <a href="/api/reports/export" target="_blank" class="navlink">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 4v12M7 11l5 5 5-5"/><path d="M4 20h16"/></svg>
+            <span>导出报告</span>
+          </a>
+        </nav>
+      </div>
+
+      <div class="sidebar-spacer"></div>
+      <div class="sidebar-footer">
+        <div class="system-health" data-no-i18n>
+          <span class="system-health-dot" aria-hidden="true"></span>
+          <span>System operational</span>
+        </div>
+        <a href="/settings" class="navlink {% if '/settings' in request.url.path %}active{% endif %}">
+          <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21h-4v-.09A1.7 1.7 0 0 0 8.5 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3v-4h.09A1.7 1.7 0 0 0 4.6 8.5a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3h4v.09A1.7 1.7 0 0 0 15.5 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9c.1.38.32.72.6 1 .3.3.68.5 1.1.4h.09v4h-.09a1.7 1.7 0 0 0-1.7.6Z"/></svg>
+          <span>系统设置</span>
         </a>
       </div>
+    </aside>
+
+    <button class="sidebar-backdrop" id="sidebarBackdrop" type="button" aria-label="关闭导航" onclick="toggleSidebar(false)"></button>
+
+    <div class="app-workspace">
+      <header class="app-topbar">
+        <button type="button" class="btn btn-ghost btn-icon mobile-menu-button" aria-label="打开导航" aria-controls="appSidebar" aria-expanded="false" onclick="toggleSidebar(true)">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+        </button>
+        <div class="topbar-context">
+          <span class="topbar-kicker" data-no-i18n>Vulnerability operations</span>
+          <span class="topbar-divider"></span>
+          <span class="topbar-date">{{ now if now else '实时数据' }}</span>
+        </div>
+        <div class="topbar-actions">
+          <button type="button" id="langToggle" class="btn btn-ghost btn-sm" aria-label="Switch language">EN</button>
+          <a href="/upload" class="btn btn-default btn-sm topbar-upload">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg>
+            上传数据
+          </a>
+        </div>
+      </header>
+
+      <main class="app-main" id="mainContent">
+        {% block content %}{% endblock %}
+      </main>
+
+      <footer class="app-footer">
+        <p>VulManager v1.0</p>
+        <p>数据更新时间：{{ now if now else 'N/A' }}</p>
+      </footer>
     </div>
-  </header>
+  </div>
 
-  <!-- ── Page body ── -->
-  <main class="mx-auto max-w-[1440px] px-6 py-8">
-    {% block content %}{% endblock %}
-  </main>
-
-  <footer class="mx-auto max-w-[1440px] px-6 py-6 border-t border-border mt-4">
-    <p class="text-xs text-muted-foreground">漏洞管理系统 v1.0 · 数据更新时间: {{ now if now else 'N/A' }}</p>
-  </footer>
-
-  <script src="/static/js/chart.umd.min.js"></script>
-  <script src="/static/js/i18n.js"></script>
+  <script src="/static/js/chart.umd.min.js?v=20260722"></script>
+  <script src="/static/js/i18n.js?v=graphite-20260722"></script>
+  <script>
+    function toggleSidebar(open) {
+      document.body.classList.toggle('sidebar-open', open);
+      const button = document.querySelector('.mobile-menu-button');
+      if (button) button.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+    window.addEventListener('keydown', event => {
+      if (event.key === 'Escape') toggleSidebar(false);
+    });
+  </script>
   {% block extra_js %}{% endblock %}
 </body>
 </html>

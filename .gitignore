@@ -24,6 +24,10 @@ env/
 *.tmp
 *.bak
 
+# Generated presentation artifacts
+/outputs/
+/scripts/
+
 # Tailwind standalone CLI (40MB binary; CSS is compiled in Docker / via the CLI)
 tailwindcss.exe
 tailwindcss

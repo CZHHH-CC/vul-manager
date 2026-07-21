@@ -49,6 +49,7 @@ async def upload_excel(
     file: UploadFile = File(...),
     auto_analyze: str = Form("false"),
     auto_fix_plan: str = Form("false"),
+    delete_old_data: str = Form("false"),
     db: Session = Depends(get_db),
 ):
     """Upload and process Excel file."""
@@ -62,10 +63,22 @@ async def upload_excel(
         tmp_path = tmp.name
 
     try:
-        result = process_excel_upload(db, tmp_path, file.filename)
+        replace_existing = delete_old_data.lower() == "true"
+        result = process_excel_upload(
+            db,
+            tmp_path,
+            file.filename,
+            replace_existing=replace_existing,
+        )
+        replacement_message = (
+            f"已删除旧漏洞 {result['deleted']} 条；" if replace_existing else ""
+        )
         response = {
             "success": True,
-            "message": f"处理完成: 新增 {result['new']} 条, 更新 {result['updated']} 条, 失败 {result['errors']} 条",
+            "message": (
+                f"处理完成：{replacement_message}新增 {result['new']} 条，更新 {result['updated']} 条，"
+                f"导入复测记录 {result['retests']} 条，失败 {result['errors']} 条"
+            ),
             "ai_triggered": False,
             **result,
         }
@@ -85,6 +98,7 @@ async def upload_excel(
 
         return response
     except Exception as e:
+        db.rollback()
         return {"error": f"Processing failed: {str(e)}"}
     finally:
         os.unlink(tmp_path)

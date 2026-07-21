@@ -17,7 +17,7 @@
 </div>
 
 <!-- Core metrics -->
-<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+<div class="kpi-primary grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
   <div class="card card-body !pt-5 fade-in">
     <p class="text-sm text-muted-foreground">未关闭漏洞</p>
     <p class="text-3xl font-semibold tracking-tightish mt-1">{{ kpi.open_total }}</p>
@@ -38,7 +38,7 @@
 </div>
 
 <!-- Severity -->
-<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+<div class="kpi-secondary grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
   {% set sev = [('严重', kpi.critical, 'text-red-600'), ('高危', kpi.high, 'text-orange-600'), ('中危', kpi.medium, 'text-amber-600'), ('低危', kpi.low, 'text-muted-foreground')] %}
   {% for label, val, color in sev %}
   <div class="card px-4 py-3 fade-in">

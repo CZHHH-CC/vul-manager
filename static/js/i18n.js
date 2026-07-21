@@ -40,6 +40,8 @@
     "上一页": "Previous",
     "下一页": "Next",
     "检测到的组件": "Detected Components",
+    "检测组件": "Detected Component",
+    "最新复测": "Latest Retest",
     "组件": "Component",
     "版本": "Version",
     "路径": "Path",
@@ -82,6 +84,8 @@
 
   const placeholderTranslations = {
     "搜索 VIT 编号 / CVE / 描述…": "Search VIT / CVE / description...",
+    "搜索 VIT 编号 / CVE / 组件 / 描述…": "Search VIT / CVE / component / description...",
+    "名称 / 版本 / 路径": "Name / version / path",
     "CVE-XXXX-XXXXX": "CVE-XXXX-XXXXX",
     "主机名": "Host"
   };

@@ -5,7 +5,12 @@ from typing import Optional
 import httpx
 from sqlalchemy.orm import Session
 from db.models import Vulnerability, VulnAnalysis
-from services.detection_parser import extract_fix_threshold, version_lt
+from services.detection_parser import (
+    extract_fix_threshold,
+    merge_grounded_components,
+    parse_detection_logic,
+    version_lt,
+)
 
 
 RISK_ANALYSIS_PROMPT = """你是一位资深的网络安全漏洞分析专家。请根据以下漏洞信息，生成简洁的风险分析报告。
@@ -389,10 +394,12 @@ async def analyze_vulnerabilities(db: Session, ai_settings: dict,
             vuln.analysis.ai_risk_summary = result.get("risk_summary")
             vuln.analysis.ai_fix_priority = result.get("fix_priority")
             vuln.analysis.ai_remediation_guide = result.get("remediation_guide")
-            components = result.get("detected_components")
+            components = merge_grounded_components(
+                result.get("detected_components"),
+                parse_detection_logic(vuln.analysis.detection_logic),
+            )
             if components:
-                import json as _json
-                vuln.analysis.detected_components = _json.dumps(components, ensure_ascii=False)
+                vuln.analysis.detected_components = json.dumps(components, ensure_ascii=False)
             # Save OS version (prefer regex extraction from description)
             os_ver = extract_os_version(vuln.raw_description)
             # If regex found a specific version, use it; otherwise use AI result
@@ -426,15 +433,57 @@ async def analyze_vulnerabilities(db: Session, ai_settings: dict,
     return {"analyzed": analyzed, "errors": errors, "total": len(vulns)}
 
 
+def _grounded_components(analysis: VulnAnalysis | None) -> list[dict]:
+    if not analysis:
+        return []
+    try:
+        ai_components = json.loads(analysis.detected_components or "[]")
+    except (json.JSONDecodeError, TypeError):
+        ai_components = []
+    return merge_grounded_components(
+        ai_components,
+        parse_detection_logic(analysis.detection_logic),
+    )
+
+
+def _reconcile_upgrade_components(plan: Optional[dict], components: list[dict]) -> Optional[dict]:
+    """Force upgrade plans to contain every grounded scanner component row."""
+    if not plan or plan.get("plan_type") != "upgrade" or not components:
+        return plan
+
+    proposed = plan.get("components") or []
+    rows = []
+    for component in components:
+        path = (component.get("path") or "").strip()
+        current = next(
+            (
+                item for item in proposed
+                if path and (item.get("path") or "").strip().lower() == path.lower()
+            ),
+            None,
+        ) or {}
+        rows.append({
+            "name": component.get("name") or current.get("name") or "",
+            "current_version": component.get("version") or current.get("current_version") or "",
+            "path": path or current.get("path") or "",
+            "affected": current.get("affected") or "待确认",
+            "affected_reason": current.get("affected_reason") or "根据扫描器实测版本与修复阈值判断",
+            "fixed_version": current.get("fixed_version") or "待确认",
+        })
+    plan["components"] = rows
+    return plan
+
+
 async def generate_fix_plan(vuln: Vulnerability, ai_settings: dict) -> Optional[dict]:
     """Generate a detailed fix plan with commands and verification steps."""
     if not ai_settings.get("ai_enabled") or not ai_settings.get("ai_api_key"):
         return None
 
     analysis = vuln.analysis
-    detected_components = "N/A"
-    if analysis and analysis.detected_components:
-        detected_components = analysis.detected_components
+    grounded_components = _grounded_components(analysis)
+    detected_components = json.dumps(grounded_components, ensure_ascii=False) if grounded_components else "N/A"
+    if analysis and grounded_components:
+        analysis.detected_components = detected_components
 
     os_version = "N/A"
     if analysis and analysis.os_version:
@@ -467,6 +516,7 @@ async def generate_fix_plan(vuln: Vulnerability, ai_settings: dict) -> Optional[
 
             if content:
                 result = _parse_ai_response(content)
+                result = _reconcile_upgrade_components(result, grounded_components)
                 result = _apply_fix_threshold(result, fix_threshold)
                 result = _sanitize_unverifiable_versions(result, fix_threshold)
                 return result
@@ -528,7 +578,8 @@ async def review_fix_plan(vuln: Vulnerability, fix_plan: dict, ai_settings: dict
 
     analysis = vuln.analysis
     os_version = analysis.os_version if analysis else "N/A"
-    detected_components = (analysis.detected_components if analysis and analysis.detected_components else "N/A")
+    grounded_components = _grounded_components(analysis)
+    detected_components = json.dumps(grounded_components, ensure_ascii=False) if grounded_components else "N/A"
 
     user_prompt = REVIEW_FIX_PLAN_PROMPT.format(
         cve_id=vuln.cve_id or "N/A",

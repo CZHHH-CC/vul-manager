@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, Float, DateTime, Boolean, ForeignKey, func
+from sqlalchemy import Column, Integer, String, Text, Float, DateTime, Boolean, ForeignKey, UniqueConstraint, func
 from sqlalchemy.orm import relationship
 from db.database import Base
 
@@ -36,6 +36,7 @@ class Vulnerability(Base):
 
     analysis = relationship("VulnAnalysis", back_populates="vulnerability", uselist=False, cascade="all, delete-orphan")
     history = relationship("VulnHistory", back_populates="vulnerability", cascade="all, delete-orphan")
+    retests = relationship("VulnRetest", back_populates="vulnerability", cascade="all, delete-orphan")
 
 
 class VulnAnalysis(Base):
@@ -76,6 +77,30 @@ class VulnHistory(Base):
     changed_at = Column(DateTime, server_default=func.now())
 
     vulnerability = relationship("Vulnerability", back_populates="history")
+
+
+class VulnRetest(Base):
+    __tablename__ = "vuln_retests"
+    __table_args__ = (
+        UniqueConstraint("vulnerability_id", "event_key", name="uq_vuln_retest_event"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    vulnerability_id = Column(Integer, ForeignKey("vulnerabilities.id", ondelete="CASCADE"), nullable=False, index=True)
+    event_key = Column(String(64), nullable=False, index=True)
+    retested_at = Column(DateTime, nullable=False, index=True)
+    source = Column(String(256))
+    scanner_status = Column(String(32))
+    previous_state = Column(String(32))
+    new_state = Column(String(32))
+    result = Column(String(32), nullable=False)
+    summary = Column(Text)
+    detection_logic = Column(Text)
+    detected_components = Column(Text)
+    raw_note = Column(Text)
+    imported_at = Column(DateTime, server_default=func.now())
+
+    vulnerability = relationship("Vulnerability", back_populates="retests")
 
 
 class UploadLog(Base):

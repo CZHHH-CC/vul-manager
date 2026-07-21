@@ -8,7 +8,7 @@
   <p class="hero-sub">导入漏洞工单 Excel，系统自动解析并入库</p>
 </div>
 
-<div class="max-w-2xl space-y-4">
+<div class="upload-layout space-y-4">
 
   <div class="card fade-in">
     <div class="card-body !pt-6 space-y-5">
@@ -21,7 +21,15 @@
         </div>
       </label>
 
-      <div id="dropZone" class="rounded-xl border-2 border-dashed border-border p-10 text-center cursor-pointer transition-colors hover:border-foreground/40 hover:bg-muted/40 select-none">
+      <label class="alert alert-error flex items-start gap-3 cursor-pointer select-none">
+        <input type="checkbox" id="deleteOldData" class="mt-0.5 rounded border-border">
+        <div>
+          <span class="text-sm font-medium">上传前删除旧数据</span>
+          <p class="text-xs">勾选后将删除现有漏洞，以及关联的 AI 分析、修复方案、复测和变更历史。系统设置与上传历史会保留，此操作不可撤销。</p>
+        </div>
+      </label>
+
+      <div id="dropZone" class="rounded-lg border-2 border-dashed border-border p-10 text-center cursor-pointer transition-colors hover:border-foreground/40 hover:bg-muted/40 select-none">
         <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-3 text-muted-foreground">
           <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M12 18v-6"/><path d="m9 15 3 3 3-3"/>
         </svg>
@@ -102,11 +110,14 @@ function setProgress(p){progFill.style.width=p+'%';uploadPct.textContent=p+'%';}
 function showResult(ok,m){uploadRes.classList.remove('hidden');resAlert.className='alert '+(ok?'alert-ok':'alert-error');resAlert.innerHTML=`<strong>${ok?'上传成功':'上传失败'}</strong>　${m}`;}
 function uploadFile(file){
   if(!file.name.match(/\.(xlsx|xls)$/i)){alert('请选择 Excel 文件 (.xlsx 或 .xls)');return;}
+  const deleteOldData=document.getElementById('deleteOldData').checked;
+  if(deleteOldData&&!confirm('将删除现有全部漏洞及关联数据，再导入这个文件。系统设置与上传历史会保留。是否继续？'))return;
   const fd=new FormData();fd.append('file',file);
   const autoFull=document.getElementById('autoFull').checked;
   if(autoFull){ fd.append('auto_analyze','true'); fd.append('auto_fix_plan','true'); }
+  if(deleteOldData)fd.append('delete_old_data','true');
   uploadProg.classList.remove('hidden');uploadRes.classList.add('hidden');setProgress(0);
-  uploadStat.textContent=autoFull?'上传中，完成后将自动进行 AI 分析与修复方案生成…':'上传中…';
+  uploadStat.textContent=deleteOldData?'正在校验文件并替换旧数据…':(autoFull?'上传中，完成后将自动进行 AI 分析与修复方案生成…':'上传中…');
   const xhr=new XMLHttpRequest();xhr.open('POST','/api/upload');
   xhr.upload.addEventListener('progress',e=>{if(e.lengthComputable)setProgress(Math.round(e.loaded/e.total*100));});
   xhr.addEventListener('load',()=>{uploadProg.classList.add('hidden');try{const d=JSON.parse(xhr.responseText);let msg=d.message;if(d.ai_triggered)msg+=' AI 分析已在后台启动。';showResult(d.success,d.success?msg:(d.error||'未知错误'));if(d.success)setTimeout(()=>location.reload(),2000);}catch{showResult(false,'服务器响应异常');}});

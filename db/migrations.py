@@ -1,5 +1,5 @@
 from db.database import engine, Base
-from db.models import Vulnerability, VulnAnalysis, VulnHistory, UploadLog
+from db.models import Vulnerability, VulnAnalysis, VulnHistory, VulnRetest, UploadLog
 
 
 def create_tables():

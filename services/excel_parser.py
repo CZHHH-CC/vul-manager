@@ -1,10 +1,12 @@
+import json
 import re
 from datetime import datetime
 from typing import Optional
 import pandas as pd
 from bs4 import BeautifulSoup
 from sqlalchemy.orm import Session
-from db.models import Vulnerability, VulnAnalysis, VulnHistory, UploadLog
+from db.models import Vulnerability, VulnAnalysis, VulnHistory, VulnRetest, UploadLog
+from services.retest_parser import parse_work_notes
 
 
 def parse_cvss_from_html(soup: BeautifulSoup) -> dict:
@@ -288,6 +290,7 @@ def parse_excel_to_records(filepath: str) -> list[dict]:
             "updated_at": updated_at,
             "raw_description": desc_html,
             "raw_recommendation": rec_html,
+            "work_notes": str(row.get("Work notes", "")),
             # Extracted analysis fields
             "cvss_score": desc_data.get("cvss_score"),
             "cvss_vector": desc_data.get("cvss_vector"),
@@ -305,11 +308,41 @@ def parse_excel_to_records(filepath: str) -> list[dict]:
     return records
 
 
-def upsert_vulnerabilities(db: Session, records: list[dict]) -> dict:
+def upsert_vulnerabilities(
+    db: Session,
+    records: list[dict],
+    *,
+    commit: bool = True,
+) -> dict:
     """Insert or update vulnerabilities. Returns counts."""
     new_count = 0
     updated_count = 0
     error_count = 0
+    retest_count = 0
+
+    def sync_retests(vulnerability: Vulnerability, work_notes: str | None) -> int:
+        imported = 0
+        existing = {
+            item.event_key: item
+            for item in db.query(VulnRetest).filter(
+                VulnRetest.vulnerability_id == vulnerability.id
+            ).all()
+        }
+        for event in parse_work_notes(work_notes):
+            values = {
+                **event,
+                "detected_components": json.dumps(
+                    event["detected_components"], ensure_ascii=False
+                ),
+            }
+            current = existing.get(event["event_key"])
+            if current:
+                for field, value in values.items():
+                    setattr(current, field, value)
+                continue
+            db.add(VulnRetest(vulnerability_id=vulnerability.id, **values))
+            imported += 1
+        return imported
 
     for record in records:
         try:
@@ -366,6 +399,8 @@ def upsert_vulnerabilities(db: Session, records: list[dict]) -> dict:
                 for change in changes:
                     db.add(change)
 
+                retest_count += sync_retests(existing, record.get("work_notes"))
+
                 updated_count += 1
             else:
                 # Create new record
@@ -402,6 +437,7 @@ def upsert_vulnerabilities(db: Session, records: list[dict]) -> dict:
                     exploit_status=record.get("exploit_status"),
                 )
                 db.add(analysis)
+                retest_count += sync_retests(vuln, record.get("work_notes"))
                 new_count += 1
 
         except Exception as e:
@@ -409,14 +445,41 @@ def upsert_vulnerabilities(db: Session, records: list[dict]) -> dict:
             print(f"Error processing {record.get('vit_number')}: {e}")
             continue
 
-    db.commit()
-    return {"new": new_count, "updated": updated_count, "errors": error_count}
+    if commit:
+        db.commit()
+    else:
+        db.flush()
+    return {
+        "new": new_count,
+        "updated": updated_count,
+        "errors": error_count,
+        "retests": retest_count,
+    }
 
 
-def process_excel_upload(db: Session, filepath: str, filename: str) -> dict:
+def delete_existing_vulnerabilities(db: Session) -> int:
+    """Delete vulnerabilities and ORM-cascaded child records without committing."""
+    vulnerabilities = db.query(Vulnerability).all()
+    for vulnerability in vulnerabilities:
+        db.delete(vulnerability)
+    db.flush()
+    return len(vulnerabilities)
+
+
+def process_excel_upload(
+    db: Session,
+    filepath: str,
+    filename: str,
+    *,
+    replace_existing: bool = False,
+) -> dict:
     """Main entry point: parse Excel and upsert into database."""
     records = parse_excel_to_records(filepath)
-    counts = upsert_vulnerabilities(db, records)
+    if not records:
+        raise ValueError("Excel 中未找到有效的漏洞工单，未修改现有数据")
+
+    deleted_count = delete_existing_vulnerabilities(db) if replace_existing else 0
+    counts = upsert_vulnerabilities(db, records, commit=False)
 
     # Log the upload
     log = UploadLog(
@@ -434,4 +497,6 @@ def process_excel_upload(db: Session, filepath: str, filename: str) -> dict:
         "new": counts["new"],
         "updated": counts["updated"],
         "errors": counts["errors"],
+        "retests": counts["retests"],
+        "deleted": deleted_count,
     }
