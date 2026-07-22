@@ -1,9 +1,31 @@
 import unittest
 
-from services.retest_parser import parse_retest_components, parse_work_notes
+from services.retest_parser import (
+    parse_retest_components,
+    parse_work_notes,
+    validate_retest_context,
+)
 
 
 class RetestParserTests(unittest.TestCase):
+    def test_rejects_retest_for_a_different_cve(self):
+        validation = validate_retest_context(
+            "CVE-2025-39973",
+            "Simplified Evaluation Logic (CVE-2021-1636): sqlservr.exe",
+        )
+
+        self.assertFalse(validation["valid"])
+        self.assertIn("CVE-2021-1636", validation["reason"])
+        self.assertIn("CVE-2025-39973", validation["reason"])
+
+    def test_accepts_retest_for_the_ticket_cve(self):
+        validation = validate_retest_context(
+            "CVE-2025-39973",
+            "Simplified Evaluation Logic (CVE-2025-39973): linux-image",
+        )
+
+        self.assertTrue(validation["valid"])
+
     def test_parses_reopened_event_with_version_and_path(self):
         notes = """2026-07-21 07:10:04 - Integration ServiceNow (Work notes)
 VIT automatically reviewed. Crowdstrike status: open (via entities_api).

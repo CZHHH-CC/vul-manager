@@ -9,6 +9,35 @@ ENTRY_HEADER = re.compile(
     r"(?<!\d)(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s+-\s+(.{1,200}?)\s+\(Work notes\)\s*",
     re.IGNORECASE,
 )
+CVE_PATTERN = re.compile(r"\bCVE-\d{4}-\d{4,7}\b", re.IGNORECASE)
+
+
+def validate_retest_context(
+    ticket_cve_id: str | None,
+    detection_logic: str | None = None,
+    raw_note: str | None = None,
+) -> dict:
+    """Check that CVEs referenced by a retest belong to the current ticket."""
+    ticket_cves = {item.upper() for item in CVE_PATTERN.findall(ticket_cve_id or "")}
+    evidence_text = "\n".join(part for part in (detection_logic, raw_note) if part)
+    evidence_cves = {item.upper() for item in CVE_PATTERN.findall(evidence_text)}
+
+    if ticket_cves and evidence_cves and ticket_cves.isdisjoint(evidence_cves):
+        ticket_label = "、".join(sorted(ticket_cves))
+        evidence_label = "、".join(sorted(evidence_cves))
+        return {
+            "valid": False,
+            "reason": f"复测依据指向 {evidence_label}，与当前工单 {ticket_label} 不一致",
+            "ticket_cves": sorted(ticket_cves),
+            "evidence_cves": sorted(evidence_cves),
+        }
+
+    return {
+        "valid": True,
+        "reason": "",
+        "ticket_cves": sorted(ticket_cves),
+        "evidence_cves": sorted(evidence_cves),
+    }
 
 
 def _clean(value: str | None) -> str:

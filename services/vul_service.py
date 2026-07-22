@@ -1,9 +1,64 @@
 import json
+import re
 from datetime import datetime, timedelta
 from typing import Optional
 from sqlalchemy import func, case, and_, extract
 from sqlalchemy.orm import Session, joinedload
 from db.models import Vulnerability, VulnAnalysis, VulnHistory, VulnRetest, UploadLog
+from services.retest_parser import validate_retest_context
+
+
+REMEDIATION_TYPE_LABELS = {
+    "software_upgrade": "软件升级",
+    "system_patch": "系统补丁",
+    "configuration": "配置加固",
+    "operational": "操作处置",
+    "pending": "待生成",
+}
+
+_SYSTEM_PATCH_PATTERN = re.compile(
+    r"(?:\bkb\d{6,8}\b|windows\s+update|microsoft\s+update\s+catalog|"
+    r"cumulative\s+update|monthly\s+rollup|linux-image|linux-headers|"
+    r"\bkernel(?:-[\w.]+|\s+(?:update|patch))|yum\s+update\s+kernel|"
+    r"dnf\s+update\s+kernel|apt(?:-get)?\s+.*linux-image|"
+    r"系统补丁|操作系统补丁|累计更新|内核(?:更新|补丁))",
+    re.IGNORECASE,
+)
+
+_CONFIGURATION_PATTERN = re.compile(
+    r"(?:registry|reg\s+add|group\s+policy|configuration|config\s+file|"
+    r"firewall|access\s+control|permission|mitigation|workaround|"
+    r"组策略|注册表|配置文件|配置变更|防火墙|访问控制|权限调整|"
+    r"临时缓解|缓解措施|禁用|停用)",
+    re.IGNORECASE,
+)
+
+
+def classify_remediation_type(fix_plan_json: Optional[str]) -> str:
+    """Map a reviewed fix plan to a stable, user-facing remediation category."""
+    if not fix_plan_json:
+        return "pending"
+    try:
+        plan = json.loads(fix_plan_json)
+    except (json.JSONDecodeError, TypeError):
+        return "pending"
+    if not isinstance(plan, dict):
+        return "pending"
+
+    explicit_type = plan.get("remediation_type")
+    if explicit_type in REMEDIATION_TYPE_LABELS:
+        return explicit_type
+
+    searchable = json.dumps(plan, ensure_ascii=False)
+    if _SYSTEM_PATCH_PATTERN.search(searchable):
+        return "system_patch"
+
+    plan_type = str(plan.get("plan_type") or "").lower()
+    if plan_type == "upgrade":
+        return "software_upgrade"
+    if _CONFIGURATION_PATTERN.search(searchable):
+        return "configuration"
+    return "operational"
 
 
 # ─── Statistics ───────────────────────────────────────────────────────────────
@@ -205,6 +260,7 @@ def get_vuln_list(
     component: Optional[str] = None,
     ai_status: Optional[str] = None,
     fix_plan_status: Optional[str] = None,
+    remediation_type: Optional[str] = None,
     assignment_group: Optional[str] = None,
     search: Optional[str] = None,
     sort_by: str = "severity_level",
@@ -268,9 +324,6 @@ def get_vuln_list(
             component_matches(search)
         )
 
-    # Total count
-    total = query.count()
-
     # Sorting
     sort_column = getattr(Vulnerability, sort_by, Vulnerability.severity_level)
     if sort_order == "desc":
@@ -278,9 +331,20 @@ def get_vuln_list(
     else:
         query = query.order_by(sort_column.asc())
 
-    # Pagination
     offset = (page - 1) * page_size
-    vulns = query.options(joinedload(Vulnerability.analysis)).offset(offset).limit(page_size).all()
+    if remediation_type in REMEDIATION_TYPE_LABELS:
+        candidates = query.options(joinedload(Vulnerability.analysis)).all()
+        candidates = [
+            vuln for vuln in candidates
+            if classify_remediation_type(
+                vuln.analysis.ai_fix_plan if vuln.analysis else None
+            ) == remediation_type
+        ]
+        total = len(candidates)
+        vulns = candidates[offset:offset + page_size]
+    else:
+        total = query.count()
+        vulns = query.options(joinedload(Vulnerability.analysis)).offset(offset).limit(page_size).all()
 
     return {
         "total": total,
@@ -306,7 +370,7 @@ def _parse_component_json(value: Optional[str]) -> list[dict]:
 def get_vuln_list_metadata(db: Session, vulns: list[Vulnerability]) -> dict[int, dict]:
     """Build component and latest-retest display data for one list page."""
     vulnerability_ids = [v.id for v in vulns]
-    latest_retests = {}
+    retests_by_vulnerability = {}
     if vulnerability_ids:
         retests = db.query(VulnRetest).filter(
             VulnRetest.vulnerability_id.in_(vulnerability_ids)
@@ -316,22 +380,29 @@ def get_vuln_list_metadata(db: Session, vulns: list[Vulnerability]) -> dict[int,
             VulnRetest.id.desc(),
         ).all()
         for retest in retests:
-            latest_retests.setdefault(retest.vulnerability_id, retest)
+            retests_by_vulnerability.setdefault(retest.vulnerability_id, []).append(retest)
 
     metadata = {}
     for vuln in vulns:
-        latest_retest = latest_retests.get(vuln.id)
+        vulnerability_retests = retests_by_vulnerability.get(vuln.id, [])
+        latest_retest = vulnerability_retests[0] if vulnerability_retests else None
+        latest_valid_retest = next((
+            retest for retest in vulnerability_retests
+            if validate_retest_context(
+                vuln.cve_id, retest.detection_logic, retest.raw_note
+            )["valid"]
+        ), None)
         initial_components = _parse_component_json(
             vuln.analysis.detected_components if vuln.analysis else None
         )
         retest_components = _parse_component_json(
-            latest_retest.detected_components if latest_retest else None
+            latest_valid_retest.detected_components if latest_valid_retest else None
         )
 
         if retest_components:
             components = retest_components
             component_source = "retest"
-        elif latest_retest and latest_retest.result == "closed":
+        elif latest_valid_retest and latest_valid_retest.result == "closed":
             components = []
             component_source = "retest_closed"
         else:
@@ -350,6 +421,9 @@ def get_vuln_list_metadata(db: Session, vulns: list[Vulnerability]) -> dict[int,
             "component_source": component_source,
             "component_tooltip": "\n".join(tooltip_lines),
             "latest_retest": latest_retest,
+            "remediation_type": classify_remediation_type(
+                vuln.analysis.ai_fix_plan if vuln.analysis else None
+            ),
         }
     return metadata
 
@@ -424,6 +498,7 @@ def get_filter_options(db: Session) -> dict:
         "states": sorted(states),
         "classes": sorted(classes),
         "assignment_groups": sorted(groups),
+        "remediation_types": REMEDIATION_TYPE_LABELS,
     }
 
 
@@ -497,7 +572,7 @@ def export_vulns_for_report(db: Session, severity: Optional[str] = None, state: 
 
     vulns = query.order_by(Vulnerability.severity_level.asc(), Vulnerability.opened_at.asc()).all()
 
-    latest_retests = {}
+    retests_by_vulnerability = {}
     vulnerability_ids = [v.id for v in vulns]
     if vulnerability_ids:
         retests = db.query(VulnRetest).filter(
@@ -508,12 +583,19 @@ def export_vulns_for_report(db: Session, severity: Optional[str] = None, state: 
             VulnRetest.id.desc(),
         ).all()
         for retest in retests:
-            latest_retests.setdefault(retest.vulnerability_id, retest)
+            retests_by_vulnerability.setdefault(retest.vulnerability_id, []).append(retest)
 
     result = []
     for v in vulns:
         a = v.analysis
-        latest_retest = latest_retests.get(v.id)
+        vulnerability_retests = retests_by_vulnerability.get(v.id, [])
+        latest_retest = vulnerability_retests[0] if vulnerability_retests else None
+        latest_retest_validation = validate_retest_context(
+            v.cve_id,
+            latest_retest.detection_logic if latest_retest else None,
+            latest_retest.raw_note if latest_retest else None,
+        )
+        remediation_type = classify_remediation_type(a.ai_fix_plan if a else None)
         result.append({
             "VIT编号": v.vit_number,
             "CVE编号": v.cve_id,
@@ -521,6 +603,7 @@ def export_vulns_for_report(db: Session, severity: Optional[str] = None, state: 
             "IP地址": v.ip_address or "",
             "服务器类型": v.server_class,
             "服务器版本": (a.os_version if a and a.os_version else ""),
+            "处置类型": REMEDIATION_TYPE_LABELS[remediation_type],
             "严重程度": v.severity,
             "状态": v.state,
             "CVSS评分": a.cvss_score if a else "",
@@ -532,8 +615,13 @@ def export_vulns_for_report(db: Session, severity: Optional[str] = None, state: 
                 if latest_retest and latest_retest.retested_at else ""
             ),
             "最新复测结果": latest_retest.result if latest_retest else "",
+            "最新复测数据校验": (
+                "一致" if latest_retest and latest_retest_validation["valid"]
+                else latest_retest_validation["reason"]
+            ),
             "最新复测组件": _format_components(
-                latest_retest.detected_components if latest_retest else None
+                latest_retest.detected_components
+                if latest_retest and latest_retest_validation["valid"] else None
             ),
             "操作指南": a.ai_remediation_guide if a and a.ai_remediation_guide else "",
             "修复方案": _format_fix_plan(a.ai_fix_plan if a else None),

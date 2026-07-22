@@ -87,7 +87,9 @@
             <div class="flex items-start justify-between gap-3 flex-wrap mb-2">
               <div>
                 <div class="flex items-center gap-2 flex-wrap">
-                  {% if event.result == 'reopened' %}
+                  {% if not item.validation.valid %}
+                  <span class="badge badge-destructive">复测数据错配</span>
+                  {% elif event.result == 'reopened' %}
                   <span class="badge badge-destructive">复测未通过 · Reopen</span>
                   {% elif event.result == 'closed' %}
                   <span class="badge badge-emerald">复测通过 · 已关闭</span>
@@ -109,6 +111,13 @@
                 <p class="text-xs text-muted-foreground mt-0.5">{{ event.source }}</p>
               </div>
             </div>
+
+            {% if not item.validation.valid %}
+            <div class="rounded-lg border border-red-500/40 bg-red-500/10 p-3 mt-3">
+              <p class="text-sm font-medium text-red-400">该复测结果未作为当前漏洞的有效检测证据</p>
+              <p class="text-xs text-muted-foreground mt-1">{{ item.validation.reason }}。原始备注已保留，请检查 ServiceNow 工单关联或扫描器回写逻辑。</p>
+            </div>
+            {% endif %}
 
             {% if item.components %}
             <div class="rounded-lg border border-border overflow-x-auto mt-3">

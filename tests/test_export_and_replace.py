@@ -43,6 +43,11 @@ class ExportAndReplaceTests(unittest.TestCase):
             detected_components=json.dumps([
                 {"name": "Teams.exe", "version": "1.4.0", "path": "C:\\initial\\Teams.exe"}
             ]),
+            ai_fix_plan=json.dumps({
+                "plan_type": "upgrade",
+                "summary": "Upgrade Microsoft Teams",
+                "components": [],
+            }),
         ))
         self.db.add_all([
             VulnRetest(
@@ -68,6 +73,7 @@ class ExportAndReplaceTests(unittest.TestCase):
 
         row = export_vulns_for_report(self.db)[0]
 
+        self.assertEqual(row["处置类型"], "软件升级")
         self.assertIn("1.4.0", row["检测到的组件"])
         self.assertEqual(row["最新复测时间"], "2026-07-20 10:30:45")
         self.assertEqual(row["最新复测结果"], "still_detected")
@@ -101,6 +107,39 @@ class ExportAndReplaceTests(unittest.TestCase):
         self.assertEqual(metadata["components"][0]["name"], "FileZilla")
         self.assertEqual(metadata["latest_retest"].retested_at, datetime(2026, 7, 21, 7, 17, 33))
         self.assertIn("HKEY_LOCAL_MACHINE", metadata["component_tooltip"])
+
+    def test_mismatched_retest_does_not_replace_initial_components_or_export(self):
+        vulnerability = Vulnerability(
+            vit_number="VIT-MISMATCH",
+            cve_id="CVE-2025-39973",
+        )
+        self.db.add(vulnerability)
+        self.db.flush()
+        self.db.add(VulnAnalysis(
+            vulnerability_id=vulnerability.id,
+            detected_components=json.dumps([
+                {"name": "linux-image", "version": "5.15.0", "path": "/boot/vmlinuz"}
+            ]),
+        ))
+        self.db.add(VulnRetest(
+            vulnerability_id=vulnerability.id,
+            event_key="mismatched-cve",
+            retested_at=datetime(2026, 7, 21, 7, 16, 15),
+            result="reopened",
+            detection_logic="Simplified Evaluation Logic (CVE-2021-1636)",
+            detected_components=json.dumps([
+                {"name": "sqlservr.exe", "version": "2019.150.2000.5", "path": "D:\\SQL\\sqlservr.exe"}
+            ]),
+        ))
+        self.db.commit()
+
+        metadata = get_vuln_list_metadata(self.db, [vulnerability])[vulnerability.id]
+        exported = export_vulns_for_report(self.db)[0]
+
+        self.assertEqual(metadata["component_source"], "initial")
+        self.assertEqual(metadata["components"][0]["name"], "linux-image")
+        self.assertEqual(exported["最新复测组件"], "")
+        self.assertIn("CVE-2021-1636", exported["最新复测数据校验"])
 
     def test_component_fuzzy_search_matches_initial_and_retest_components(self):
         initial = Vulnerability(vit_number="VIT-INITIAL", severity_level=2)

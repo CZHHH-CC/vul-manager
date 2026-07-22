@@ -10,11 +10,13 @@ from db.models import Vulnerability, VulnAnalysis
 from services.vul_service import (
     get_vuln_list, get_vuln_detail, update_vuln_state,
     get_vuln_history, get_vuln_retests, get_filter_options, get_overdue_vulns,
-    delete_vulns_by_numbers, get_vuln_list_metadata,
+    delete_vulns_by_numbers, get_vuln_list_metadata, classify_remediation_type,
+    REMEDIATION_TYPE_LABELS,
 )
 from services.ai_analyzer import analyze_vulnerabilities, generate_and_review_fix_plan, generate_fix_plans_bulk
 from services.cve_lookup import enrich_cvss_scores, count_missing_cvss
 from services.detection_parser import parse_detection_logic, cross_validate_components, merge_grounded_components
+from services.retest_parser import validate_retest_context
 from routers.settings import get_ai_settings
 
 router = APIRouter()
@@ -32,6 +34,7 @@ async def vuln_list_page(
     component: Optional[str] = None,
     ai_status: Optional[str] = None,
     fix_plan_status: Optional[str] = None,
+    remediation_type: Optional[str] = None,
     search: Optional[str] = None,
     sort_by: str = "severity_level",
     sort_order: str = "asc",
@@ -44,6 +47,7 @@ async def vuln_list_page(
         db, severity=severity, state=state, cve_id=cve_id,
         hostname=hostname, server_class=server_class, component=component,
         ai_status=ai_status, fix_plan_status=fix_plan_status,
+        remediation_type=remediation_type,
         search=search,
         sort_by=sort_by, sort_order=sort_order, page=page, page_size=page_size,
     )
@@ -68,6 +72,7 @@ async def vuln_list_page(
             "component": component,
             "ai_status": ai_status,
             "fix_plan_status": fix_plan_status,
+            "remediation_type": remediation_type,
             "search": search,
             "sort_by": sort_by,
             "sort_order": sort_order,
@@ -83,6 +88,7 @@ async def list_vulns_api(
     hostname: Optional[str] = None,
     server_class: Optional[str] = None,
     component: Optional[str] = None,
+    remediation_type: Optional[str] = None,
     search: Optional[str] = None,
     sort_by: str = "severity_level",
     sort_order: str = "asc",
@@ -94,6 +100,7 @@ async def list_vulns_api(
     result = get_vuln_list(
         db, severity=severity, state=state, cve_id=cve_id,
         hostname=hostname, server_class=server_class, component=component,
+        remediation_type=remediation_type,
         search=search, sort_by=sort_by,
         sort_order=sort_order, page=page, page_size=page_size,
     )
@@ -113,6 +120,12 @@ async def list_vulns_api(
                 "opened_at": v.opened_at.isoformat() if v.opened_at else None,
                 "cvss_score": v.analysis.cvss_score if v.analysis else None,
                 "ai_fix_priority": v.analysis.ai_fix_priority if v.analysis else None,
+                "remediation_type": classify_remediation_type(
+                    v.analysis.ai_fix_plan if v.analysis else None
+                ),
+                "remediation_type_label": REMEDIATION_TYPE_LABELS[
+                    classify_remediation_type(v.analysis.ai_fix_plan if v.analysis else None)
+                ],
             }
             for v in result["items"]
         ],
@@ -134,11 +147,18 @@ async def vuln_detail_page(
     retests = get_vuln_retests(db, vit_number)
     retest_timeline = []
     for retest in retests:
+        validation = validate_retest_context(
+            vuln.cve_id, retest.detection_logic, retest.raw_note
+        )
         try:
             components = json.loads(retest.detected_components or "[]")
         except (json.JSONDecodeError, TypeError):
             components = []
-        retest_timeline.append({"event": retest, "components": components})
+        retest_timeline.append({
+            "event": retest,
+            "components": components if validation["valid"] else [],
+            "validation": validation,
+        })
 
     # Cross-validate AI-extracted components against regex-extracted ones
     ai_components = []

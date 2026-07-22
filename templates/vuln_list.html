@@ -30,7 +30,7 @@
   @media (min-width: 1024px) {
     .vuln-filter-sidebar form {
       display: grid;
-      grid-template-columns: repeat(6, minmax(0, 1fr));
+      grid-template-columns: repeat(7, minmax(0, 1fr));
       gap: .75rem 1rem;
       align-items: end;
     }
@@ -164,6 +164,16 @@
         </select>
       </div>
 
+      <div>
+        <p class="filter-label">处置类型</p>
+        <select class="form-select" name="remediation_type">
+          <option value="">全部</option>
+          {% for value, label in filters.remediation_types.items() %}
+          <option value="{{ value }}" {% if current_filters.remediation_type == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
       <div class="h-px bg-border"></div>
 
       <div>
@@ -217,7 +227,7 @@
           <thead><tr class="border-b border-border bg-muted/40">
             <th class="tbl-th w-10"><input type="checkbox" id="selectAll" onchange="toggleSelectAll(this)" class="rounded border-border"></th>
             <th class="tbl-th">VIT 编号</th><th class="tbl-th">CVE 编号</th><th class="tbl-th">主机名</th><th class="tbl-th">检测组件</th><th class="tbl-th">最新复测</th>
-            <th class="tbl-th">类型</th><th class="tbl-th">严重程度</th><th class="tbl-th">状态</th>
+            <th class="tbl-th">处置类型</th><th class="tbl-th">严重程度</th><th class="tbl-th">状态</th>
             <th class="tbl-th">AI 分析</th><th class="tbl-th">修复方案</th><th class="tbl-th">创建时间</th><th class="tbl-th text-right pr-4">操作</th>
           </tr></thead>
           <tbody>
@@ -257,7 +267,15 @@
                   <span class="text-muted-foreground">未复测</span>
                 {% endif %}
               </td>
-              <td class="tbl-td text-muted-foreground text-xs">{{ vuln.server_class }}</td>
+              <td class="tbl-td">
+                {% set remediation_type = meta.remediation_type if meta else 'pending' %}
+                {% set remediation_label = filters.remediation_types.get(remediation_type, '待生成') %}
+                {% if remediation_type == 'software_upgrade' %}<span class="badge badge-blue">{{ remediation_label }}</span>
+                {% elif remediation_type == 'system_patch' %}<span class="badge badge-orange">{{ remediation_label }}</span>
+                {% elif remediation_type == 'configuration' %}<span class="badge badge-amber">{{ remediation_label }}</span>
+                {% elif remediation_type == 'operational' %}<span class="badge badge-secondary">{{ remediation_label }}</span>
+                {% else %}<span class="badge badge-outline">{{ remediation_label }}</span>{% endif %}
+              </td>
               <td class="tbl-td">
                 {% if 'Critical' in (vuln.severity or '') %}<span class="badge badge-destructive">{{ vuln.severity }}</span>
                 {% elif 'High' in (vuln.severity or '') %}<span class="badge badge-orange">{{ vuln.severity }}</span>
