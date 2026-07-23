@@ -5,6 +5,7 @@ from typing import Optional
 from sqlalchemy import func, case, and_, extract
 from sqlalchemy.orm import Session, joinedload
 from db.models import Vulnerability, VulnAnalysis, VulnHistory, VulnRetest, UploadLog
+from services.detection_parser import extract_fix_threshold
 from services.retest_parser import validate_retest_context
 
 
@@ -618,6 +619,10 @@ def export_vulns_for_report(db: Session, severity: Optional[str] = None, state: 
             "最新复测数据校验": (
                 "一致" if latest_retest and latest_retest_validation["valid"]
                 else latest_retest_validation["reason"]
+            ),
+            "最新复测修复阈值": (
+                extract_fix_threshold(latest_retest.detection_logic) or ""
+                if latest_retest and latest_retest_validation["valid"] else ""
             ),
             "最新复测组件": _format_components(
                 latest_retest.detected_components

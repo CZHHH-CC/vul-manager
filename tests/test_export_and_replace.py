@@ -55,6 +55,7 @@ class ExportAndReplaceTests(unittest.TestCase):
                 event_key="old",
                 retested_at=datetime(2026, 7, 1, 9, 0, 0),
                 result="reopened",
+                detection_logic="Check if the version of Teams.exe is less than 1.5.0",
                 detected_components=json.dumps([
                     {"name": "Teams.exe", "version": "1.5.0", "path": "C:\\old\\Teams.exe"}
                 ]),
@@ -64,6 +65,7 @@ class ExportAndReplaceTests(unittest.TestCase):
                 event_key="latest",
                 retested_at=datetime(2026, 7, 20, 10, 30, 45),
                 result="still_detected",
+                detection_logic="Check if the version of Teams.exe is less than 1.6.00.27573",
                 detected_components=json.dumps([
                     {"name": "Teams.exe", "version": "1.6.0", "path": "C:\\latest\\Teams.exe"}
                 ]),
@@ -77,6 +79,7 @@ class ExportAndReplaceTests(unittest.TestCase):
         self.assertIn("1.4.0", row["检测到的组件"])
         self.assertEqual(row["最新复测时间"], "2026-07-20 10:30:45")
         self.assertEqual(row["最新复测结果"], "still_detected")
+        self.assertEqual(row["最新复测修复阈值"], "1.6.00.27573")
         self.assertIn("C:\\latest\\Teams.exe", row["最新复测组件"])
         self.assertNotIn("C:\\old\\Teams.exe", row["最新复测组件"])
 

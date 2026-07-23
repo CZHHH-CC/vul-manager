@@ -15,7 +15,12 @@ from services.vul_service import (
 )
 from services.ai_analyzer import analyze_vulnerabilities, generate_and_review_fix_plan, generate_fix_plans_bulk
 from services.cve_lookup import enrich_cvss_scores, count_missing_cvss
-from services.detection_parser import parse_detection_logic, cross_validate_components, merge_grounded_components
+from services.detection_parser import (
+    parse_detection_logic,
+    cross_validate_components,
+    merge_grounded_components,
+    extract_fix_threshold,
+)
 from services.retest_parser import validate_retest_context
 from routers.settings import get_ai_settings
 
@@ -158,6 +163,10 @@ async def vuln_detail_page(
             "event": retest,
             "components": components if validation["valid"] else [],
             "validation": validation,
+            "fix_threshold": (
+                extract_fix_threshold(retest.detection_logic)
+                if validation["valid"] else None
+            ),
         })
 
     # Cross-validate AI-extracted components against regex-extracted ones

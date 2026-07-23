@@ -15,6 +15,7 @@
     "严重程度": "Severity",
     "状态": "Status",
     "服务器类型": "Server Type",
+    "修复阈值": "Fix Threshold",
     "处置类型": "Remediation Type",
     "软件升级": "Software Upgrade",
     "系统补丁": "System Patch",
